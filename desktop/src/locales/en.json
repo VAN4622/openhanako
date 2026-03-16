@@ -81,6 +81,7 @@
     "selectWorkspace": "Select workspace",
     "planMode": "Use computer",
     "deskContext": "With desk context",
+    "docContext": "With document",
     "thinkingLevel": {
       "off": "off",
       "auto": "auto",

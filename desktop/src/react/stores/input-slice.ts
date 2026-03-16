@@ -4,15 +4,23 @@ export interface AttachedFile {
   isDirectory?: boolean;
 }
 
+export interface DocContextFile {
+  path: string;
+  name: string;
+}
+
 export interface InputSlice {
   attachedFiles: AttachedFile[];
   deskContextAttached: boolean;
+  docContextAttached: boolean;
   addAttachedFile: (file: AttachedFile) => void;
   removeAttachedFile: (index: number) => void;
   setAttachedFiles: (files: AttachedFile[]) => void;
   clearAttachedFiles: () => void;
   setDeskContextAttached: (attached: boolean) => void;
   toggleDeskContext: () => void;
+  setDocContextAttached: (attached: boolean) => void;
+  toggleDocContext: () => void;
 }
 
 export const createInputSlice = (
@@ -20,6 +28,7 @@ export const createInputSlice = (
 ): InputSlice => ({
   attachedFiles: [],
   deskContextAttached: false,
+  docContextAttached: false,
   addAttachedFile: (file) =>
     set((s) => ({ attachedFiles: [...s.attachedFiles, file] })),
   removeAttachedFile: (index) =>
@@ -29,4 +38,7 @@ export const createInputSlice = (
   setDeskContextAttached: (attached) => set({ deskContextAttached: attached }),
   toggleDeskContext: () =>
     set((s) => ({ deskContextAttached: !s.deskContextAttached })),
+  setDocContextAttached: (attached) => set({ docContextAttached: attached }),
+  toggleDocContext: () =>
+    set((s) => ({ docContextAttached: !s.docContextAttached })),
 });

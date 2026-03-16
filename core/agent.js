@@ -677,12 +677,15 @@ export class Agent {
       );
     }
 
-    // 书桌 = 当前工作目录
+    // 书桌 = 当前工作目录（注入实际路径）
+    const cwdPath = this._engine?.cwd || "";
     parts.push(isZh
       ? `\n## 书桌\n\n` +
-        `用户所说的「书桌」「工作空间」指的是你当前的工作目录（cwd），不是系统桌面（~/Desktop）。`
+        `用户所说的「书桌」「工作空间」指的是你当前的工作目录（cwd），不是系统桌面（~/Desktop）。` +
+        (cwdPath ? `\n当前工作目录：${cwdPath}` : "")
       : `\n## Desk\n\n` +
-        `When the user says "desk" (书桌) or "workspace", they mean your current working directory (cwd), NOT the system Desktop (~/Desktop).`
+        `When the user says "desk" (书桌) or "workspace", they mean your current working directory (cwd), NOT the system Desktop (~/Desktop).` +
+        (cwdPath ? `\nCurrent working directory: ${cwdPath}` : "")
     );
 
     // 日期时间

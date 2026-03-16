@@ -10,7 +10,6 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaFetch } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
-import type { DeskFile } from '../types';
 import type { ThinkingLevel } from '../stores/model-slice';
 
 // ── Toast 通知 ──
@@ -105,10 +104,10 @@ function InputAreaInner() {
   const pendingNewSession = useStore(s => s.pendingNewSession);
   const sessionTodos = useStore(s => s.sessionTodos);
   const attachedFiles = useStore(s => s.attachedFiles);
-  const deskContextAttached = useStore(s => s.deskContextAttached);
-  const deskFiles = useStore(s => s.deskFiles);
-  const deskCurrentPath = useStore(s => s.deskCurrentPath);
-  const deskBasePath = useStore(s => s.deskBasePath);
+  const docContextAttached = useStore(s => s.docContextAttached);
+  const artifacts = useStore(s => s.artifacts);
+  const currentArtifactId = useStore(s => s.currentArtifactId);
+  const previewOpen = useStore(s => s.previewOpen);
   const models = useStore(s => s.models);
   const agentYuan = useStore(s => s.agentYuan);
   const thinkingLevel = useStore(s => s.thinkingLevel);
@@ -130,12 +129,17 @@ function InputAreaInner() {
   // Zustand actions
   const removeAttachedFile = useStore(s => s.removeAttachedFile);
   const clearAttachedFiles = useStore(s => s.clearAttachedFiles);
-  const toggleDeskContext = useStore(s => s.toggleDeskContext);
-  const setDeskContextAttached = useStore(s => s.setDeskContextAttached);
+  const toggleDocContext = useStore(s => s.toggleDocContext);
+  const setDocContextAttached = useStore(s => s.setDocContextAttached);
 
-  // Desk context available?
-  const deskDir = deskCurrentPath || deskBasePath || '';
-  const hasDeskDir = deskDir.length > 0;
+  // Doc context: current open artifact with filePath
+  const currentDoc = useMemo(() => {
+    if (!previewOpen || !currentArtifactId) return null;
+    const art = artifacts.find(a => a.id === currentArtifactId);
+    if (!art?.filePath) return null;
+    return { path: art.filePath, name: art.title || art.filePath.split('/').pop() || '' };
+  }, [previewOpen, currentArtifactId, artifacts]);
+  const hasDoc = !!currentDoc;
 
   // ── 统一命令发送 ──
 
@@ -226,7 +230,7 @@ function InputAreaInner() {
   }, []);
 
   // Can send?
-  const hasContent = inputText.trim().length > 0 || attachedFiles.length > 0 || deskContextAttached;
+  const hasContent = inputText.trim().length > 0 || attachedFiles.length > 0 || docContextAttached;
   const canSend = hasContent && connected && !isStreaming;
 
   // ── Auto resize ──
@@ -278,7 +282,7 @@ function InputAreaInner() {
     }
 
     const hasFiles = attachedFiles.length > 0;
-    if ((!text && !hasFiles && !deskContextAttached) || !connected) return;
+    if ((!text && !hasFiles && !docContextAttached) || !connected) return;
     if (isStreaming) return; // streaming 时由 handleSteer 处理
     if (sending) return;
     setSending(true);
@@ -300,29 +304,26 @@ function InputAreaInner() {
         finalText = text ? `${text}\n\n${fileBlock}` : fileBlock;
       }
 
-      let deskContextForRender: { dir: string; fileCount: number } | null = null;
-      if (deskContextAttached && deskDir && deskFiles.length > 0) {
-        let filesToShow: DeskFile[] = deskFiles;
-        let truncNote = '';
-        if (filesToShow.length > 50) {
-          filesToShow = filesToShow.slice(0, 50);
-          truncNote = `\n... 共 ${deskFiles.length} 个项目，已显示前 50 个`;
-        }
-        const listing = filesToShow
-          .map(f => f.isDir ? `  📁 ${f.name}/` : `  ${f.name}`)
-          .join('\n');
-        const deskBlock = `[当前书桌目录] ${deskDir}\n${listing}${truncNote}`;
-        finalText = finalText ? `${finalText}\n\n${deskBlock}` : deskBlock;
-        deskContextForRender = { dir: deskDir, fileCount: deskFiles.length };
+      // 文档上下文：把当前打开的文档路径附加到消息里
+      let docForRender: { path: string; name: string } | null = null;
+      if (docContextAttached && currentDoc) {
+        const docBlock = `[参考文档] ${currentDoc.path}`;
+        finalText = finalText ? `${finalText}\n\n${docBlock}` : docBlock;
+        docForRender = currentDoc;
       }
 
-      if (deskContextAttached) {
-        setDeskContextAttached(false);
+      if (docContextAttached) {
+        setDocContextAttached(false);
       }
 
       const filesToRender = hasFiles ? [...attachedFiles] : null;
+      // 文档上下文渲染为附件卡片
+      const allFiles = filesToRender ? [...filesToRender] : [];
+      if (docForRender) {
+        allFiles.push({ path: docForRender.path, name: docForRender.name });
+      }
       const _cr = () => window.HanaModules.chatRender;
-      _cr().addUserMessage(text, filesToRender, deskContextForRender);
+      _cr().addUserMessage(text, allFiles.length > 0 ? allFiles : null, null);
 
       setInputText('');
       clearAttachedFiles();
@@ -331,7 +332,7 @@ function InputAreaInner() {
     } finally {
       setSending(false);
     }
-  }, [inputText, attachedFiles, deskContextAttached, connected, isStreaming, sending, pendingNewSession, deskDir, deskFiles, clearAttachedFiles, setDeskContextAttached, slashMenuOpen, filteredCommands, slashSelected]);
+  }, [inputText, attachedFiles, docContextAttached, connected, isStreaming, sending, pendingNewSession, currentDoc, clearAttachedFiles, setDocContextAttached, slashMenuOpen, filteredCommands, slashSelected]);
 
   // ── Steer (插话) ──
   const handleSteer = useCallback(() => {
@@ -437,10 +438,10 @@ function InputAreaInner() {
         <div className="input-bottom-bar">
           <div className="input-actions">
             <PlanModeButton enabled={planMode} onToggle={setPlanMode} />
-            <DeskContextButton
-              active={deskContextAttached}
-              disabled={!hasDeskDir}
-              onToggle={toggleDeskContext}
+            <DocContextButton
+              active={docContextAttached}
+              disabled={!hasDoc}
+              onToggle={toggleDocContext}
             />
           </div>
           <div className="input-controls">
@@ -560,9 +561,9 @@ function PlanModeButton({ enabled, onToggle }: {
   );
 }
 
-// ── Desk Context Button ──
+// ── Doc Context Button ──
 
-function DeskContextButton({ active, disabled, onToggle }: {
+function DocContextButton({ active, disabled, onToggle }: {
   active: boolean;
   disabled: boolean;
   onToggle: () => void;
@@ -572,14 +573,18 @@ function DeskContextButton({ active, disabled, onToggle }: {
   return (
     <button
       className={'desk-context-btn' + (active ? ' active' : '')}
-      title={t('input.deskContext') || '看着书桌说'}
+      title={t('input.docContext') || '看着文档说'}
       disabled={disabled}
       onClick={onToggle}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z" />
+        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <polyline points="10 9 9 9 8 9" />
       </svg>
-      <span className="desk-context-label">{t('input.deskContext') || '看着书桌说'}</span>
+      <span className="desk-context-label">{t('input.docContext') || '看着文档说'}</span>
     </button>
   );
 }
