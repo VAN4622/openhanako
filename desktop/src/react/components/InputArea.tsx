@@ -340,27 +340,40 @@ function InputAreaInner() {
       }
 
       // 图片文件读 base64 编码
-      const hana = (window as any).hana;
+      const readFileBase64 = window.platform?.readFileBase64 || (window as any).hana?.readFileBase64;
       const images: Array<{ type: 'image'; data: string; mimeType: string }> = [];
+      const failedImageNames: string[] = [];
       if (imageFiles.length > 0) {
         for (const img of imageFiles) {
           try {
             if (img.base64Data && img.mimeType) {
               // 内联 base64（粘贴图片）
               images.push({ type: 'image', data: img.base64Data, mimeType: img.mimeType });
-            } else if (hana?.readFileBase64) {
-              const base64: string = await hana.readFileBase64(img.path);
+            } else if (readFileBase64) {
+              const base64: string | null = await readFileBase64(img.path);
               if (base64) {
                 const ext = img.name.toLowerCase().replace(/^.*\./, '');
                 const mimeMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', webp: 'image/webp', bmp: 'image/bmp', svg: 'image/svg+xml' };
                 images.push({ type: 'image', data: base64, mimeType: mimeMap[ext] || 'image/png' });
+              } else {
+                failedImageNames.push(img.name);
               }
+            } else {
+              failedImageNames.push(img.name);
             }
           } catch {
-            // 读取失败的图片降级为路径文本
-            finalText = finalText ? `${finalText}\n\n[附件] ${img.path}` : `[附件] ${img.path}`;
+            failedImageNames.push(img.name);
           }
         }
+      }
+
+      if (failedImageNames.length > 0) {
+        showToast(
+          `无法读取图片附件：${failedImageNames.join('、')}。请重新添加后再试。`,
+          'error',
+          12000,
+        );
+        return;
       }
 
       // 文档上下文：把当前打开的文档路径附加到消息里

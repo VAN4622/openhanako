@@ -8,6 +8,7 @@ import { t } from "../i18n.js";
 import { debugLog } from "../../lib/debug-log.js";
 import { getRawConfig, getAllProviders, saveGlobalProviders, clearConfigCache } from "../../lib/memory/config-loader.js";
 import { FactStore } from "../../lib/memory/fact-store.js";
+import { getProviderUsageScope } from "../../lib/providers/coding-plan.js";
 
 export default async function configRoute(app, { engine }) {
 
@@ -53,6 +54,7 @@ export default async function configRoute(app, { engine }) {
           api_key: mask(p.api_key),
           models: p.models || [],
           model_count: (p.models || []).length,
+          usage_scope: p.usage_scope || getProviderUsageScope(name, p.base_url),
         };
       }
       config.providers = maskedProviders;

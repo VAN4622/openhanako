@@ -40,10 +40,13 @@ const state = {
   isLocalProvider: false,
 };
 
+const INTERACTIVE_ONLY_PROVIDERS = new Set(["bailian-coding-plan"]);
+
 // ── Provider 预设 ──
 const PROVIDER_PRESETS = [
   { value: "ollama",      label: "Ollama (本地)",      url: "http://localhost:11434/v1", api: "openai-completions", local: true },
   { value: "dashscope",   label: "DashScope (Qwen)",  url: "https://dashscope.aliyuncs.com/compatible-mode/v1", api: "openai-completions" },
+  { value: "bailian-coding-plan", label: "Bailian Coding Plan", url: "https://coding.dashscope.aliyuncs.com/v1", api: "openai-completions", usage_scope: "interactive-only" },
   { value: "openai",      label: "OpenAI",            url: "https://api.openai.com/v1", api: "openai-completions" },
   { value: "deepseek",    label: "DeepSeek",          url: "https://api.deepseek.com/v1", api: "openai-completions" },
   { value: "volcengine",  label: "Volcengine (豆包)",  url: "https://ark.cn-beijing.volces.com/api/v3", api: "openai-completions" },
@@ -360,6 +363,7 @@ async function saveProvider() {
           base_url: state.providerUrl,
           api_key: state.apiKey,
           api: state.providerApi,
+          usage_scope: INTERACTIVE_ONLY_PROVIDERS.has(state.providerName) ? "interactive-only" : "",
         },
       },
     }),
@@ -472,8 +476,11 @@ function _buildSdw(container, models, stateKey) {
 }
 
 function populateUtilitySelects(models) {
-  _buildSdw($("#utilitySelect"), models, "selectedUtility");
-  _buildSdw($("#utilityLargeSelect"), models, "selectedUtilityLarge");
+  const utilityModels = INTERACTIVE_ONLY_PROVIDERS.has(state.providerName) ? [] : models;
+  state.selectedUtility = "";
+  state.selectedUtilityLarge = "";
+  _buildSdw($("#utilitySelect"), utilityModels, "selectedUtility");
+  _buildSdw($("#utilityLargeSelect"), utilityModels, "selectedUtilityLarge");
 }
 
 function renderModelList(models) {

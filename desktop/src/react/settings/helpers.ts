@@ -5,6 +5,15 @@ import { useSettingsStore } from './store';
 import { hanaFetch } from './api';
 import knownModels from '../../../../lib/known-models.json';
 
+const BAILIAN_CODING_PLAN_PROVIDER = 'bailian-coding-plan';
+const BAILIAN_CODING_PLAN_BASE_URL = 'https://coding.dashscope.aliyuncs.com/v1';
+const BAILIAN_CODING_PLAN_API = 'openai-completions';
+
+function isInteractiveOnlyProvider(providerName: string, baseUrl?: string): boolean {
+  return providerName === BAILIAN_CODING_PLAN_PROVIDER
+    || String(baseUrl || '').replace(/\/+$/, '') === BAILIAN_CODING_PLAN_BASE_URL;
+}
+
 const platform = (window as any).platform;
 
 export function t(key: string, params?: Record<string, any>): any {
@@ -36,6 +45,19 @@ export function resolveProviderForModel(modelId: string): string | null {
     if ((p.models || []).includes(modelId)) return name;
   }
   return null;
+}
+
+export function isInteractiveOnlyProviderName(providerName: string): boolean {
+  if (!providerName) return false;
+  const config = useSettingsStore.getState().settingsConfig;
+  const providerConfig = config?.providers?.[providerName];
+  const scope = providerConfig?.usage_scope;
+  return scope === 'interactive-only' || isInteractiveOnlyProvider(providerName, providerConfig?.base_url);
+}
+
+export function isInteractiveOnlyModel(modelId: string): boolean {
+  const provider = resolveProviderForModel(modelId);
+  return provider ? isInteractiveOnlyProviderName(provider) : false;
 }
 
 function lookupReferenceModelMeta(modelId: string): any {
@@ -164,6 +186,7 @@ export function savePins() {
 export const PROVIDER_PRESETS = [
   { value: 'ollama', label: 'Ollama (Local)', url: 'http://localhost:11434/v1', api: 'openai-completions', local: true },
   { value: 'dashscope', label: 'DashScope (Qwen)', url: 'https://dashscope.aliyuncs.com/compatible-mode/v1', api: 'openai-completions' },
+  { value: BAILIAN_CODING_PLAN_PROVIDER, label: 'Bailian Coding Plan', url: BAILIAN_CODING_PLAN_BASE_URL, api: BAILIAN_CODING_PLAN_API, usage_scope: 'interactive-only' },
   { value: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', api: 'openai-completions' },
   { value: 'deepseek', label: 'DeepSeek', url: 'https://api.deepseek.com/v1', api: 'openai-completions' },
   { value: 'volcengine', label: 'Volcengine (豆包)', url: 'https://ark.cn-beijing.volces.com/api/v3', api: 'openai-completions' },

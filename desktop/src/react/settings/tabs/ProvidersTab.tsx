@@ -51,7 +51,7 @@ export function ProvidersTab() {
 
   const addProvider = async () => {
     const key = newKey.trim();
-    let name: string, url: string, api: string;
+    let name: string, url: string, api: string, usageScope = '';
     if (isCustom) {
       name = customName.trim().toLowerCase();
       url = customUrl.trim();
@@ -64,6 +64,7 @@ export function ProvidersTab() {
       name = presetVal;
       url = preset?.url || '';
       api = preset?.api || '';
+      usageScope = (preset as any)?.usage_scope || '';
       if (!url || !api) {
         showToast(t('settings.providers.apiRequired'), 'error');
         return;
@@ -77,7 +78,7 @@ export function ProvidersTab() {
       const res = await hanaFetch('/api/config', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ providers: { [name]: { base_url: url, api_key: key, api, models: [] } } }),
+        body: JSON.stringify({ providers: { [name]: { base_url: url, api_key: key, api, models: [], usage_scope: usageScope } } }),
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error);

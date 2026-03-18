@@ -12,10 +12,15 @@ import YAML from "js-yaml";
 import { createModuleLogger } from "../lib/debug-log.js";
 import {
   clearConfigCache,
+  findProviderForModel,
   loadGlobalProviders,
   loadModelsRegistry,
   resolveApiKeyFromAuth,
 } from "../lib/memory/config-loader.js";
+import {
+  getInteractiveOnlyProviderReason,
+  isInteractiveOnlyProvider,
+} from "../lib/providers/coding-plan.js";
 
 const log = createModuleLogger("config");
 
@@ -89,6 +94,7 @@ export class ConfigCoordinator {
     const changed = [];
     for (const [field, prefKey] of SHARED_MODEL_KEYS) {
       if (partial[field] !== undefined) {
+        this._assertSharedModelAllowed(field, partial[field]);
         if (partial[field] !== null && partial[field] !== "") prefs[prefKey] = partial[field];
         else delete prefs[prefKey];
         changed.push(`${field}=${partial[field] || "(cleared)"}`);
@@ -140,6 +146,9 @@ export class ConfigCoordinator {
 
   setUtilityApi(partial) {
     const prefs = this._prefs();
+    if (partial.provider !== undefined) {
+      this._assertUtilityProviderAllowed(partial.provider);
+    }
     for (const [key, prefKey] of [
       ["provider", "utility_api_provider"],
       ["base_url", "utility_api_base_url"],
@@ -155,11 +164,42 @@ export class ConfigCoordinator {
   }
 
   resolveUtilityConfig() {
+    const sharedModels = this.getSharedModels();
+    const agentModels = this._d.getAgent()?.config?.models || {};
+    this._assertSharedModelAllowed("utility", sharedModels.utility || agentModels.utility);
+    this._assertSharedModelAllowed("utility_large", sharedModels.utility_large || agentModels.utility_large);
+    const utilApi = this.getUtilityApi();
+    this._assertUtilityProviderAllowed(utilApi.provider);
     const models = this._d.getModels();
     return models.resolveUtilityConfig(
       this._d.getAgent().config,
-      this.getSharedModels(),
-      this.getUtilityApi(),
+      sharedModels,
+      utilApi,
+    );
+  }
+
+  _assertSharedModelAllowed(field, modelId) {
+    if (!modelId) return;
+    const provider = findProviderForModel(modelId);
+    const globalProvider = loadGlobalProviders().providers?.[provider];
+    const agentProvider = this._d.getAgent()?.config?.providers?.[provider];
+    const baseUrl = globalProvider?.base_url || agentProvider?.base_url || "";
+    if (!isInteractiveOnlyProvider(provider, baseUrl)) return;
+
+    const reason = getInteractiveOnlyProviderReason(provider, baseUrl);
+    throw new Error(
+      `${field} model "${modelId}" uses provider "${provider}", which ${reason} and cannot be used for background utility/memory tasks.`,
+    );
+  }
+
+  _assertUtilityProviderAllowed(provider) {
+    const globalProvider = loadGlobalProviders().providers?.[provider];
+    const agentProvider = this._d.getAgent()?.config?.providers?.[provider];
+    const baseUrl = globalProvider?.base_url || agentProvider?.base_url || "";
+    if (!provider || !isInteractiveOnlyProvider(provider, baseUrl)) return;
+    const reason = getInteractiveOnlyProviderReason(provider, baseUrl);
+    throw new Error(
+      `utility_api provider "${provider}" ${reason} and cannot be used for background utility/memory tasks.`,
     );
   }
 

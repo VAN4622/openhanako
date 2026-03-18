@@ -3,6 +3,11 @@
  */
 import { getAllProviders } from "../../lib/memory/config-loader.js";
 import { buildProviderAuthHeaders } from "../../lib/llm/provider-client.js";
+import {
+  BAILIAN_CODING_PLAN_PROVIDER,
+  getStaticProviderModels,
+  isBailianCodingPlanBaseUrl,
+} from "../../lib/providers/coding-plan.js";
 
 export default async function providersRoute(app, { engine }) {
   function normalizeRegistryModels(models) {
@@ -31,6 +36,8 @@ export default async function providersRoute(app, { engine }) {
     const effectiveBaseUrl = base_url || savedProvider.base_url || "";
     const effectiveApi = explicitApi || savedProvider.api || "";
     const hasExplicitRemoteConfig = !!(effectiveBaseUrl && effectiveApi && (api_key || savedKey));
+    const isCodingPlanProvider =
+      name === BAILIAN_CODING_PLAN_PROVIDER || isBailianCodingPlanBaseUrl(effectiveBaseUrl);
 
     const oauthProviderIds = new Set(
       (engine.authStorage?.getOAuthProviders?.() || []).map((provider) => provider.id),
@@ -52,6 +59,10 @@ export default async function providersRoute(app, { engine }) {
       } catch (err) {
         return { error: err.message, models: [] };
       }
+    }
+
+    if (isCodingPlanProvider) {
+      return { source: "static", models: getStaticProviderModels(BAILIAN_CODING_PLAN_PROVIDER) };
     }
 
     if (!base_url) {

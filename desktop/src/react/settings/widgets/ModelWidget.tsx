@@ -1,7 +1,3 @@
-/**
- * MDW（模型下拉组件）的 React 版本
- * 支持按 provider 分组、favorites 标星、自定义输入
- */
 import React, { useState, useRef, useEffect } from 'react';
 
 interface ModelWidgetProps {
@@ -13,11 +9,21 @@ interface ModelWidgetProps {
   placeholder?: string;
   lookupModelMeta?: (id: string) => any;
   formatContext?: (n: number) => string;
+  filterModel?: (modelId: string) => boolean;
+  emptyText?: string;
 }
 
 export function ModelWidget({
-  providers, favorites, value, onSelect, onToggleFavorite,
-  placeholder, lookupModelMeta, formatContext,
+  providers,
+  favorites,
+  value,
+  onSelect,
+  onToggleFavorite,
+  placeholder,
+  lookupModelMeta,
+  formatContext,
+  filterModel,
+  emptyText,
 }: ModelWidgetProps) {
   const t = (window as any).t || ((k: string) => k);
   const [open, setOpen] = useState(false);
@@ -43,6 +49,9 @@ export function ModelWidget({
   }, [open]);
 
   const query = search.toLowerCase();
+  const filteredFavorites = [...favorites]
+    .filter(mid => !filterModel || filterModel(mid))
+    .filter(mid => !query || mid.toLowerCase().includes(query));
 
   const handleCustomSubmit = () => {
     const val = customInput.trim();
@@ -60,7 +69,7 @@ export function ModelWidget({
         type="button"
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
       >
-        <span className="mdw-value">{value || `— ${placeholder || t('settings.api.selectModel')} —`}</span>
+        <span className="mdw-value">{value || `- ${placeholder || t('settings.api.selectModel')} -`}</span>
         <span className="mdw-arrow">▾</span>
       </button>
       <div className={`mdw-popup${open ? ' open' : ''}`}>
@@ -75,26 +84,25 @@ export function ModelWidget({
           onClick={(e) => e.stopPropagation()}
         />
         <div className="mdw-options">
-          {/* 直接显示主模型列表 */}
-          {[...favorites]
-            .filter(mid => !query || mid.toLowerCase().includes(query))
-            .map(mid => {
-              const meta = lookupModelMeta?.(mid);
-              return (
-                <button
-                  key={mid}
-                  className={`mdw-option${mid === value ? ' selected' : ''}`}
-                  type="button"
-                  onClick={() => { onSelect(mid); setOpen(false); }}
-                >
-                  <span className="mdw-option-name">{mid}</span>
-                  {meta?.context && formatContext && (
-                    <span className="mdw-option-ctx">{formatContext(meta.context)}</span>
-                  )}
-                </button>
-              );
-            })
-          }
+          {filteredFavorites.length === 0 && (
+            <div className="mdw-empty">{emptyText || t('settings.api.noModels')}</div>
+          )}
+          {filteredFavorites.map(mid => {
+            const meta = lookupModelMeta?.(mid);
+            return (
+              <button
+                key={mid}
+                className={`mdw-option${mid === value ? ' selected' : ''}`}
+                type="button"
+                onClick={() => { onSelect(mid); setOpen(false); }}
+              >
+                <span className="mdw-option-name">{mid}</span>
+                {meta?.context && formatContext && (
+                  <span className="mdw-option-ctx">{formatContext(meta.context)}</span>
+                )}
+              </button>
+            );
+          })}
           <div className="mdw-custom-row">
             <input
               type="text"
@@ -114,7 +122,7 @@ export function ModelWidget({
               className="mdw-custom-confirm"
               onClick={(e) => { e.stopPropagation(); handleCustomSubmit(); }}
             >
-              ↵
+              {'->'}
             </button>
           </div>
         </div>

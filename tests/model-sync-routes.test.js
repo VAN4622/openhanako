@@ -351,4 +351,53 @@ describe("model sync related routes", () => {
 
     await app.close();
   });
+
+  it("Coding Plan provider fetch returns the documented static model catalog", async () => {
+    const { default: providersRoute } = await import("../server/routes/providers.js");
+    const app = Fastify();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    const engine = {
+      availableModels: [],
+      refreshAvailableModels: vi.fn().mockResolvedValue(undefined),
+      authStorage: {
+        getOAuthProviders: () => [],
+        getApiKey: vi.fn(),
+      },
+      configPath: "/tmp/test-config.yaml",
+    };
+
+    await providersRoute(app, { engine });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/api/providers/fetch-models",
+      payload: {
+        name: "bailian-coding-plan",
+        base_url: "https://coding.dashscope.aliyuncs.com/v1",
+        api: "openai-completions",
+      },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(res.json()).toEqual({
+      source: "static",
+      models: [
+        { id: "qwen3-coder-plus", name: "qwen3-coder-plus", context: null, maxOutput: null },
+        { id: "qwen3-coder-next", name: "qwen3-coder-next", context: null, maxOutput: null },
+        { id: "qwen3-max-2026-01-23", name: "qwen3-max-2026-01-23", context: null, maxOutput: null },
+        { id: "qwen3-plus", name: "qwen3-plus", context: null, maxOutput: null },
+        { id: "qwen3-thinking-plus", name: "qwen3-thinking-plus", context: null, maxOutput: null },
+        { id: "deepseek-v3.1", name: "deepseek-v3.1", context: null, maxOutput: null },
+        { id: "kimi-k2.5", name: "kimi-k2.5", context: null, maxOutput: null },
+        { id: "glm-4.7", name: "glm-4.7", context: null, maxOutput: null },
+        { id: "glm-5", name: "glm-5", context: null, maxOutput: null },
+        { id: "MiniMax-M2.5", name: "MiniMax-M2.5", context: null, maxOutput: null },
+      ],
+    });
+
+    await app.close();
+  });
 });

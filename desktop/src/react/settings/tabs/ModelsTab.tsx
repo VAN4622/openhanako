@@ -3,7 +3,7 @@ import { useSettingsStore } from '../store';
 import { hanaFetch } from '../api';
 import {
   t, formatContext, lookupModelMeta, resolveProviderForModel,
-  autoSaveConfig, autoSaveGlobalModels, autoSaveModels,
+  autoSaveConfig, autoSaveGlobalModels, autoSaveModels, isInteractiveOnlyModel,
   CONTEXT_PRESETS, OUTPUT_PRESETS,
 } from '../helpers';
 import { SelectWidget } from '../widgets/SelectWidget';
@@ -322,6 +322,7 @@ function ModelEditPanel({ modelId, onClose, providers }: {
 function OtherModelsSection({ providers }: { providers: Record<string, any> }) {
   const { globalModelsConfig, settingsConfig, pendingFavorites, showToast } = useSettingsStore();
   const [searchApiKey, setSearchApiKey] = useState('');
+  const utilityFavorites = new Set([...pendingFavorites].filter(mid => !isInteractiveOnlyModel(mid)));
 
   const searchProvider = globalModelsConfig?.search?.provider || '';
   const maskedSearchKey = globalModelsConfig?.search?.api_key;
@@ -356,11 +357,12 @@ function OtherModelsSection({ providers }: { providers: Record<string, any> }) {
           <label className="settings-field-label">{t('settings.api.utilityModel')}</label>
           <ModelWidget
             providers={providers}
-            favorites={pendingFavorites}
+            favorites={utilityFavorites}
             value={globalModelsConfig?.models?.utility || ''}
             onSelect={(id) => autoSaveGlobalModels({ models: { utility: id } })}
             lookupModelMeta={lookupModelMeta}
             formatContext={formatContext}
+            emptyText="No background-safe models yet"
           />
           <span className="settings-field-hint">{t('settings.api.utilityModelHint')}</span>
         </div>
@@ -368,11 +370,12 @@ function OtherModelsSection({ providers }: { providers: Record<string, any> }) {
           <label className="settings-field-label">{t('settings.api.utilityLargeModel')}</label>
           <ModelWidget
             providers={providers}
-            favorites={pendingFavorites}
+            favorites={utilityFavorites}
             value={globalModelsConfig?.models?.utility_large || ''}
             onSelect={(id) => autoSaveGlobalModels({ models: { utility_large: id } })}
             lookupModelMeta={lookupModelMeta}
             formatContext={formatContext}
+            emptyText="No background-safe models yet"
           />
           <span className="settings-field-hint">{t('settings.api.utilityLargeModelHint')}</span>
         </div>
