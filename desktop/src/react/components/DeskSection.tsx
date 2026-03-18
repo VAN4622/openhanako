@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
+import { hanaFetch } from '../hooks/use-hana-fetch';
 import type { DeskFile, Artifact } from '../types';
 import { escapeHtml } from '../utils/format';
 
@@ -680,7 +681,7 @@ async function loadCwdSkills() {
   const s = useStore.getState();
   if (!s.deskBasePath) return;
   try {
-    const res = await getDeskCtx().hanaFetch(
+    const res = await hanaFetch(
       `/api/desk/skills?dir=${encodeURIComponent(s.deskBasePath)}`,
     );
     const data = await res.json();
@@ -772,7 +773,7 @@ function DeskCwdSkillsPanel() {
       console.log('[cwd-skills] filePath=', filePath, 'file.name=', file.name);
       if (!filePath) continue;
       try {
-        const res = await getDeskCtx().hanaFetch('/api/desk/install-skill', {
+        const res = await hanaFetch('/api/desk/install-skill', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ filePath, dir }),
@@ -804,9 +805,10 @@ function DeskCwdSkillsPanel() {
     <div className={`desk-cwd-panel-wrap${closing ? ' closing' : ''}`}>
       <div
         className={`desk-cwd-panel${dragging ? ' drag-over' : ''}`}
-        onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={handleDrop}
+        onClick={() => console.log('[cwd-skills] CLICK on panel — pointer events work')}
+        onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); if (!dragging) { setDragging(true); console.log('[cwd-skills] dragOver on panel'); } }}
+        onDragLeave={() => { setDragging(false); console.log('[cwd-skills] dragLeave on panel'); }}
+        onDrop={(e) => { console.log('[cwd-skills] DROP on panel!'); handleDrop(e); }}
       >
         {/* 说明文案 + 装饰线 */}
         <div className="desk-cwd-desc-line">
