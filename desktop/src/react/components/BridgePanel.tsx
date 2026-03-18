@@ -11,6 +11,7 @@ interface BridgeSession {
   displayName?: string;
   avatarUrl?: string;
   lastActive?: number;
+  isOwner?: boolean;
 }
 
 interface BridgeMessage {
@@ -24,9 +25,48 @@ interface StatusData {
   [key: string]: { status: string; configured?: boolean } | undefined;
 }
 
+interface ConversationBinding {
+  conversationId: string;
+  lastSeenSeq: number;
+  conversationLastSeq: number;
+  updatedAt: string | null;
+}
+
+interface TimelineEvent {
+  seq: number;
+  sourceType: string;
+  sourceKey: string;
+  messageRole: string;
+  text?: string;
+  recordedAt?: string;
+}
+
+interface SnapshotItem {
+  seq: number;
+  source: string;
+  text: string;
+  toolName?: string;
+  recordedAt?: string;
+}
+
+interface ConversationSnapshot {
+  conversationId: string;
+  updatedAt: string;
+  lastSeq: number;
+  currentObjective?: SnapshotItem | null;
+  openLoops?: SnapshotItem[];
+  confirmedConstraints?: SnapshotItem[];
+  recentDecisions?: SnapshotItem[];
+  lastUserMessage?: SnapshotItem | null;
+  lastAssistantMessage?: SnapshotItem | null;
+  recentToolResults?: SnapshotItem[];
+}
+
 export function BridgePanel() {
   const activePanel = useStore(s => s.activePanel);
   const setActivePanel = useStore(s => s.setActivePanel);
+  const currentSessionPath = useStore(s => s.currentSessionPath);
+  const localSessions = useStore(s => s.sessions);
 
   const [platform, setPlatform] = useState(() => localStorage.getItem('hana_bridge_tab') || 'feishu');
   const [sessions, setSessions] = useState<BridgeSession[]>([]);
@@ -36,6 +76,13 @@ export function BridgePanel() {
   const [chatOpen, setChatOpen] = useState(false);
   const [showOverlay, setShowOverlay] = useState(false);
   const [statusData, setStatusData] = useState<StatusData>({});
+  const [localBinding, setLocalBinding] = useState<ConversationBinding | null>(null);
+  const [bridgeBinding, setBridgeBinding] = useState<ConversationBinding | null>(null);
+  const [timelineEvents, setTimelineEvents] = useState<TimelineEvent[]>([]);
+  const [snapshot, setSnapshot] = useState<ConversationSnapshot | null>(null);
+  const [isConversationLoading, setIsConversationLoading] = useState(false);
+  const [isLinking, setIsLinking] = useState(false);
+  const [linkError, setLinkError] = useState('');
 
   const containerRef = useRef<Element | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
@@ -46,6 +93,9 @@ export function BridgePanel() {
   useEffect(() => {
     containerRef.current = document.querySelector('.main-content');
   }, []);
+
+  const currentBridgeSession = sessions.find(s => s.sessionKey === currentKey) || null;
+  const currentLocalSession = localSessions.find(s => s.path === currentSessionPath) || null;
 
   // 加载状态
   const loadStatus = useCallback(async () => {
@@ -75,6 +125,64 @@ export function BridgePanel() {
     }
   }, []);
 
+  const loadConversationState = useCallback(async (sessionKey: string | null) => {
+    if (!sessionKey) {
+      setBridgeBinding(null);
+      setTimelineEvents([]);
+      setSnapshot(null);
+      setLinkError('');
+      return;
+    }
+
+    setIsConversationLoading(true);
+    setLinkError('');
+
+    try {
+      const requests: Promise<Response>[] = [
+        hanaFetch(`/api/conversations/bridge?sessionKey=${encodeURIComponent(sessionKey)}&guest=false`),
+      ];
+
+      if (currentSessionPath) {
+        requests.push(
+          hanaFetch(`/api/conversations/local?sessionPath=${encodeURIComponent(currentSessionPath)}`),
+        );
+      }
+
+      const responses = await Promise.all(requests);
+      const bridgeData = await responses[0].json();
+      const localData = responses[1] ? await responses[1].json() : { binding: null };
+      const nextBridgeBinding = bridgeData.binding || null;
+      const nextLocalBinding = localData.binding || null;
+
+      setBridgeBinding(nextBridgeBinding);
+      setLocalBinding(nextLocalBinding);
+
+      if (nextBridgeBinding?.conversationId) {
+        const [timelineRes, snapshotRes] = await Promise.all([
+          hanaFetch(
+            `/api/conversations/${encodeURIComponent(nextBridgeBinding.conversationId)}/timeline?limit=8`,
+          ),
+          hanaFetch(
+            `/api/conversations/${encodeURIComponent(nextBridgeBinding.conversationId)}/snapshot`,
+          ),
+        ]);
+        const timelineData = await timelineRes.json();
+        const snapshotData = await snapshotRes.json();
+        setTimelineEvents(Array.isArray(timelineData.events) ? timelineData.events : []);
+        setSnapshot(snapshotData.snapshot || null);
+      } else {
+        setTimelineEvents([]);
+        setSnapshot(null);
+      }
+    } catch (err) {
+      console.error('[bridge] load conversation state failed:', err);
+      setTimelineEvents([]);
+      setSnapshot(null);
+    } finally {
+      setIsConversationLoading(false);
+    }
+  }, [currentSessionPath]);
+
   // 面板打开时加载数据
   useEffect(() => {
     if (activePanel === 'bridge') {
@@ -83,6 +191,11 @@ export function BridgePanel() {
       setCurrentKey(null);
     }
   }, [activePanel, platform, loadPlatformData]);
+
+  useEffect(() => {
+    if (activePanel !== 'bridge' || !currentKey) return;
+    loadConversationState(currentKey);
+  }, [activePanel, currentKey, currentSessionPath, loadConversationState]);
 
   // 注册 WS 回调
   useEffect(() => {
@@ -152,11 +265,44 @@ export function BridgePanel() {
     }
   }, [currentKey, currentName, openSession]);
 
+  const linkToCurrentSession = useCallback(async () => {
+    if (!currentKey || !currentSessionPath) return;
+    setIsLinking(true);
+    setLinkError('');
+    try {
+      const res = await hanaFetch('/api/conversations/link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionPath: currentSessionPath,
+          sessionKey: currentKey,
+          guest: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || '关联失败');
+      }
+      await loadConversationState(currentKey);
+    } catch (err) {
+      console.error('[bridge] link conversation failed:', err);
+      setLinkError(err instanceof Error ? err.message : '关联失败');
+    } finally {
+      setIsLinking(false);
+    }
+  }, [currentKey, currentSessionPath, loadConversationState]);
+
   const close = useCallback(() => setActivePanel(null), [setActivePanel]);
 
   if (activePanel !== 'bridge' || !containerRef.current) return null;
 
   const t = window.t ?? ((p: string) => p);
+  const sharedConversation =
+    !!localBinding?.conversationId &&
+    !!bridgeBinding?.conversationId &&
+    localBinding.conversationId === bridgeBinding.conversationId;
+  const canLinkToCurrentSession = !!currentBridgeSession?.isOwner && !!currentSessionPath && !sharedConversation;
+  const currentLocalLabel = currentLocalSession?.title || currentLocalSession?.firstMessage || '当前对话';
   const tgStatus = statusData.telegram?.status;
   const fsStatus = statusData.feishu?.status;
   const waStatus = statusData.whatsapp?.status;
@@ -258,12 +404,175 @@ export function BridgePanel() {
               <>
                 <div className="bridge-chat-header" id="bridgeChatHeader">
                   <span className="bridge-chat-header-name">{currentName}</span>
-                  <button className="bridge-chat-reset" title={t('bridge.resetContext')} onClick={resetSession}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="1 4 1 10 7 10" />
-                      <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
-                    </svg>
-                  </button>
+                  <div className="bridge-chat-header-actions">
+                    <button className="bridge-chat-reset" title={t('bridge.resetContext')} onClick={resetSession}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="1 4 1 10 7 10" />
+                        <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+                <div className="bridge-context-card">
+                  <div className="bridge-context-card-header">
+                    <div>
+                      <div className="bridge-context-card-title">共享会话</div>
+                      <div className="bridge-context-card-subtitle">
+                        {currentBridgeSession?.isOwner
+                          ? '所有者会话会继续当前本地对话的共享上下文。'
+                          : '访客会话不会接入这条共享时间线。'}
+                      </div>
+                    </div>
+                    {sharedConversation ? (
+                      <span className="bridge-context-badge is-linked">已关联</span>
+                    ) : (
+                      <span className="bridge-context-badge">未关联</span>
+                    )}
+                  </div>
+
+                  <div className="bridge-context-grid">
+                    <div className="bridge-context-item">
+                      <span className="bridge-context-label">当前对话</span>
+                      <span className="bridge-context-value" title={currentLocalLabel}>{currentLocalLabel}</span>
+                      <span className="bridge-context-meta">
+                        {localBinding?.conversationId ? shortConversationId(localBinding.conversationId) : '未绑定'}
+                      </span>
+                    </div>
+                    <div className="bridge-context-item">
+                      <span className="bridge-context-label">Bridge 会话</span>
+                      <span className="bridge-context-value" title={currentName}>{currentName}</span>
+                      <span className="bridge-context-meta">
+                        {bridgeBinding?.conversationId ? shortConversationId(bridgeBinding.conversationId) : '未绑定'}
+                      </span>
+                    </div>
+                  </div>
+
+                  {canLinkToCurrentSession && (
+                    <div className="bridge-context-actions">
+                      <button
+                        className="bridge-link-btn"
+                        onClick={linkToCurrentSession}
+                        disabled={isLinking}
+                      >
+                        {isLinking ? '关联中...' : '关联到当前对话'}
+                      </button>
+                    </div>
+                  )}
+
+                  {linkError && (
+                    <div className="bridge-context-error">{linkError}</div>
+                  )}
+
+                  <div className="bridge-timeline">
+                    <div className="bridge-timeline-header">
+                      <span className="bridge-context-label">共享上下文快照</span>
+                      {isConversationLoading && <span className="bridge-context-meta">加载中...</span>}
+                    </div>
+                    {snapshot ? (
+                      <div className="bridge-snapshot">
+                        <div className="bridge-snapshot-row">
+                          <span className="bridge-snapshot-key">当前目标</span>
+                          <span className="bridge-snapshot-value">{snapshotText(snapshot.currentObjective)}</span>
+                        </div>
+                        <div className="bridge-snapshot-row">
+                          <span className="bridge-snapshot-key">最新用户消息</span>
+                          <span className="bridge-snapshot-value">{snapshotText(snapshot.lastUserMessage)}</span>
+                        </div>
+                        <div className="bridge-snapshot-row">
+                          <span className="bridge-snapshot-key">最新助手消息</span>
+                          <span className="bridge-snapshot-value">{snapshotText(snapshot.lastAssistantMessage)}</span>
+                        </div>
+                        {snapshot.openLoops && snapshot.openLoops.length > 0 && (
+                          <div className="bridge-snapshot-tools">
+                            <div className="bridge-snapshot-key">未闭合问题</div>
+                            <div className="bridge-snapshot-tool-list">
+                              {snapshot.openLoops.map(item => (
+                                <div key={`loop-${item.seq}`} className="bridge-snapshot-tool">
+                                  <span className="bridge-snapshot-tool-name">[{item.source}]</span>
+                                  <span className="bridge-snapshot-tool-text">{item.text || '暂无'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {snapshot.confirmedConstraints && snapshot.confirmedConstraints.length > 0 && (
+                          <div className="bridge-snapshot-tools">
+                            <div className="bridge-snapshot-key">已确认约束</div>
+                            <div className="bridge-snapshot-tool-list">
+                              {snapshot.confirmedConstraints.map(item => (
+                                <div key={`constraint-${item.seq}`} className="bridge-snapshot-tool">
+                                  <span className="bridge-snapshot-tool-name">[{item.source}]</span>
+                                  <span className="bridge-snapshot-tool-text">{item.text || '暂无'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {snapshot.recentDecisions && snapshot.recentDecisions.length > 0 && (
+                          <div className="bridge-snapshot-tools">
+                            <div className="bridge-snapshot-key">最近决策</div>
+                            <div className="bridge-snapshot-tool-list">
+                              {snapshot.recentDecisions.map(item => (
+                                <div key={`decision-${item.seq}`} className="bridge-snapshot-tool">
+                                  <span className="bridge-snapshot-tool-name">[{item.source}]</span>
+                                  <span className="bridge-snapshot-tool-text">{item.text || '暂无'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {snapshot.recentToolResults && snapshot.recentToolResults.length > 0 && (
+                          <div className="bridge-snapshot-tools">
+                            <div className="bridge-snapshot-key">最近工具结果</div>
+                            <div className="bridge-snapshot-tool-list">
+                              {snapshot.recentToolResults.map(item => (
+                                <div key={`tool-${item.seq}`} className="bridge-snapshot-tool">
+                                  <span className="bridge-snapshot-tool-name">
+                                    [{item.source}] {item.toolName || 'tool'}
+                                  </span>
+                                  <span className="bridge-snapshot-tool-text">{item.text || '无文本结果'}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="bridge-timeline-empty">
+                        {bridgeBinding?.conversationId
+                          ? '这条会话还没有生成快照。'
+                          : '先关联或继续对话，才会生成共享上下文快照。'}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="bridge-timeline">
+                    <div className="bridge-timeline-header">
+                      <span className="bridge-context-label">最近共享时间线</span>
+                      {isConversationLoading && <span className="bridge-context-meta">加载中...</span>}
+                    </div>
+                    {timelineEvents.length === 0 ? (
+                      <div className="bridge-timeline-empty">
+                        {bridgeBinding?.conversationId
+                          ? '这条共享时间线里还没有事件。'
+                          : '先关联或继续对话，才会开始记录共享时间线。'}
+                      </div>
+                    ) : (
+                      <div className="bridge-timeline-list">
+                        {timelineEvents.map(event => (
+                          <div key={`${event.seq}-${event.sourceType}-${event.sourceKey}`} className="bridge-timeline-item">
+                            <div className="bridge-timeline-meta">
+                              <span>{timelineSourceLabel(event.sourceType)}</span>
+                              <span>#{event.seq}</span>
+                            </div>
+                            <div className="bridge-timeline-body">
+                              {timelineEventText(event)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
                 <div className="bridge-chat-messages" ref={messagesRef} id="bridgeChatMessages">
                   {messages.length === 0 ? (
@@ -284,6 +593,29 @@ export function BridgePanel() {
     </div>,
     containerRef.current,
   );
+}
+
+function shortConversationId(conversationId: string): string {
+  return conversationId.length > 8 ? conversationId.slice(0, 8) : conversationId;
+}
+
+function timelineSourceLabel(sourceType: string): string {
+  if (sourceType === 'local_session') return '本地';
+  if (sourceType === 'bridge_owner') return 'Owner 通道';
+  if (sourceType === 'bridge_guest') return 'Guest 通道';
+  return sourceType;
+}
+
+function timelineEventText(event: TimelineEvent): string {
+  const prefix = event.messageRole ? `${event.messageRole}: ` : '';
+  const text = String(event.text || '').trim();
+  if (text) return `${prefix}${text}`;
+  return prefix || '事件';
+}
+
+function snapshotText(item?: SnapshotItem | null): string {
+  if (!item?.text) return '暂无';
+  return `[${item.source}] ${item.text}`;
 }
 
 function dotClass(status?: string): string {

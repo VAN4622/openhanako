@@ -28,6 +28,7 @@ import { createExperienceTools } from "../lib/tools/experience.js";
 import { createInstallSkillTool } from "../lib/tools/install-skill.js";
 import { createNotifyTool } from "../lib/tools/notify-tool.js";
 import { createDelegateTool } from "../lib/tools/delegate-tool.js";
+import { ConversationManager } from "../lib/conversations/conversation-manager.js";
 import { READ_ONLY_BUILTIN_TOOLS } from "./config-coordinator.js";
 import { formatSkillsForPrompt } from "@mariozechner/pi-coding-agent";
 import { runCompatChecks } from "../lib/compat/index.js";
@@ -69,6 +70,7 @@ export class Agent {
     this._summaryManager = null;
     this._memoryTicker = null;
     this._memorySearchTool = null;
+    this._conversationManager = null;
     this._webSearchTool = null;
     this._webFetchTool = null;
     this._todoTool = null;
@@ -117,6 +119,8 @@ export class Agent {
     this.userName = this._config.user?.name || (isZh ? "用户" : "User");
     this.agentName = this._config.agent?.name || "Hanako";
     this._memoryMasterEnabled = this._config.memory?.enabled !== false;
+    this._conversationManager = new ConversationManager({ agentDir: this.agentDir });
+    this._conversationManager.init();
 
     // 3. 初始化各模块
     log(`  [agent] 3. initWebSearch...`);
@@ -356,6 +360,7 @@ export class Agent {
   get memoryModel() { return this._memoryModel; }
   get summaryManager() { return this._summaryManager; }
   get memoryTicker() { return this._memoryTicker; }
+  get conversationManager() { return this._conversationManager; }
   get tools() {
     const memTools = this.memoryEnabled ? [
       this._memorySearchTool,

@@ -14,6 +14,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { createModuleLogger } from "../lib/debug-log.js";
 import { BrowserManager } from "../lib/browser/browser-manager.js";
+import { createConversationScopedResourceLoader } from "../lib/conversations/conversation-manager.js";
 
 const log = createModuleLogger("session");
 
@@ -90,6 +91,7 @@ export class SessionCoordinator {
     agent.setMemoryEnabled(memoryEnabled);
 
     const { tools: sessionTools, customTools: sessionCustomTools } = this._d.buildTools(effectiveCwd);
+    const resourceLoader = createConversationScopedResourceLoader(this._d.getResourceLoader());
     const { session } = await createAgentSession({
       cwd: effectiveCwd,
       sessionManager: sessionMgr,
@@ -97,7 +99,7 @@ export class SessionCoordinator {
       modelRegistry: models.modelRegistry,
       model: models.currentModel,
       thinkingLevel: models.resolveThinkingLevel(this._d.getPrefs().getThinkingLevel()),
-      resourceLoader: this._d.getResourceLoader(),
+      resourceLoader,
       tools: sessionTools,
       customTools: sessionCustomTools,
     });
@@ -112,11 +114,21 @@ export class SessionCoordinator {
       this._d.emitEvent(event, sessionPath);
     });
 
+    if (sessionPath) {
+      try {
+        await agent.conversationManager?.ensureLocalSession(sessionPath, {
+          cwd: effectiveCwd,
+        });
+      } catch (err) {
+        log.warn(`conversation binding init failed: ${err.message}`);
+      }
+    }
+
     // 存入 map
     const mapKey = sessionPath || `_anon_${Date.now()}`;
     const old = this._sessions.get(mapKey);
     if (old) old.unsub();
-    this._sessions.set(mapKey, { session, unsub });
+    this._sessions.set(mapKey, { session, unsub, resourceLoader });
 
     // 淘汰
     if (this._sessions.size > MAX_CACHED_SESSIONS) {
@@ -178,9 +190,57 @@ export class SessionCoordinator {
     if (!this._session) throw new Error("没有活跃的 session，请先调用 createSession()");
     this._sessionStarted = true;
     const promptOpts = opts?.images?.length ? { images: opts.images } : undefined;
-    await this._session.prompt(text, promptOpts);
+    const sessionPath = this._session.sessionManager?.getSessionFile?.();
+    const promptContext = sessionPath
+      ? await this._d.getAgent().conversationManager?.prepareLocalPromptContext(sessionPath)
+      : null;
+    const hasSharedContext = Boolean(promptContext?.messageContent || promptContext?.systemPrompt);
+    let entry = sessionPath ? this._sessions.get(sessionPath) : null;
+
+    if (sessionPath && hasSharedContext) {
+      log.log(
+        `shared context pending=${promptContext?.pendingCount || 0} conversation=${promptContext?.conversationId || "?"}`,
+      );
+    }
+
+    const beforeCount = Array.isArray(this._session.messages) ? this._session.messages.length : 0;
+
+    if (entry?.resourceLoader && hasSharedContext) {
+      entry.resourceLoader.setConversationContext(promptContext);
+    }
+
+    try {
+      await this._session.prompt(text, promptOpts);
+    } finally {
+      if (entry?.resourceLoader && hasSharedContext) {
+        entry.resourceLoader.clearConversationContext();
+      }
+    }
+
     const sp = this._session.sessionManager?.getSessionFile?.();
     if (sp) this._d.getAgent()._memoryTicker?.notifyTurn(sp);
+
+    if (sp && promptContext?.uptoSeq && hasSharedContext) {
+      try {
+        await this._d.getAgent().conversationManager?.markLocalPromptContextSeen(sp, promptContext.uptoSeq);
+        log.log(`shared context consumed upto=${promptContext.uptoSeq} session=${path.basename(sp)}`);
+      } catch (err) {
+        log.warn(`conversation cursor update failed: ${err.message}`);
+      }
+    }
+
+    const newMessages = Array.isArray(this._session.messages)
+      ? this._session.messages.slice(beforeCount)
+      : [];
+    if (sp && newMessages.length > 0) {
+      try {
+        await this._d.getAgent().conversationManager?.appendLocalSessionMessages(sp, newMessages, {
+          cwd: this._session.sessionManager?.getCwd?.() || null,
+        });
+      } catch (err) {
+        log.warn(`conversation append failed: ${err.message}`);
+      }
+    }
   }
 
   async abort() {
