@@ -2846,6 +2846,11 @@ html[data-platform="linux"] .tb-toggle-right {
     transform: translateY(-1px);
 }
 
+.bridge-link-btn-secondary {
+    color: var(--text);
+    background: var(--overlay-light);
+}
+
 .bridge-link-btn:disabled {
     opacity: 0.6;
     cursor: default;

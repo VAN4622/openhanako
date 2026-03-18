@@ -88,4 +88,61 @@ export default async function conversationsRoute(app, { engine }) {
       bridge: cm.getBindingInfoForBridgeSession(sessionKey, { guest: !!guest }),
     };
   });
+
+  app.post("/api/conversations/local/reset", async (req, reply) => {
+    const { sessionPath } = req.body || {};
+    if (!sessionPath) {
+      reply.code(400);
+      return { error: "sessionPath required" };
+    }
+
+    const cm = engine.agent?.conversationManager;
+    if (!cm) {
+      reply.code(500);
+      return { error: "conversation manager unavailable" };
+    }
+
+    const previous = cm.getBindingInfoForLocalSession(sessionPath);
+    const conversationId = await cm.resetLocalSessionConversation(sessionPath, {
+      resetBy: "api",
+      resetScope: "local_session",
+    });
+
+    return {
+      ok: true,
+      conversationId,
+      previous,
+      local: cm.getBindingInfoForLocalSession(sessionPath),
+    };
+  });
+
+  app.post("/api/conversations/bridge/reset", async (req, reply) => {
+    const { sessionKey, guest } = req.body || {};
+    if (!sessionKey) {
+      reply.code(400);
+      return { error: "sessionKey required" };
+    }
+
+    const cm = engine.agent?.conversationManager;
+    if (!cm) {
+      reply.code(500);
+      return { error: "conversation manager unavailable" };
+    }
+
+    const previous = cm.getBindingInfoForBridgeSession(sessionKey, { guest: !!guest });
+    const conversationId = await cm.resetBridgeSessionConversation(sessionKey, {
+      guest: !!guest,
+      meta: {
+        resetBy: "api",
+        resetScope: guest ? "bridge_guest_session" : "bridge_owner_session",
+      },
+    });
+
+    return {
+      ok: true,
+      conversationId,
+      previous,
+      bridge: cm.getBindingInfoForBridgeSession(sessionKey, { guest: !!guest }),
+    };
+  });
 }

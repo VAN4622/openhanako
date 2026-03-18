@@ -82,6 +82,7 @@ export function BridgePanel() {
   const [snapshot, setSnapshot] = useState<ConversationSnapshot | null>(null);
   const [isConversationLoading, setIsConversationLoading] = useState(false);
   const [isLinking, setIsLinking] = useState(false);
+  const [isResettingConversation, setIsResettingConversation] = useState(false);
   const [linkError, setLinkError] = useState('');
 
   const containerRef = useRef<Element | null>(null);
@@ -292,6 +293,32 @@ export function BridgePanel() {
     }
   }, [currentKey, currentSessionPath, loadConversationState]);
 
+  const resetSharedConversation = useCallback(async () => {
+    if (!currentKey) return;
+    setIsResettingConversation(true);
+    setLinkError('');
+    try {
+      const res = await hanaFetch('/api/conversations/bridge/reset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionKey: currentKey,
+          guest: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || 'reset shared conversation failed');
+      }
+      await loadConversationState(currentKey);
+    } catch (err) {
+      console.error('[bridge] reset shared conversation failed:', err);
+      setLinkError(err instanceof Error ? err.message : 'reset shared conversation failed');
+    } finally {
+      setIsResettingConversation(false);
+    }
+  }, [currentKey, loadConversationState]);
+
   const close = useCallback(() => setActivePanel(null), [setActivePanel]);
 
   if (activePanel !== 'bridge' || !containerRef.current) return null;
@@ -302,6 +329,7 @@ export function BridgePanel() {
     !!bridgeBinding?.conversationId &&
     localBinding.conversationId === bridgeBinding.conversationId;
   const canLinkToCurrentSession = !!currentBridgeSession?.isOwner && !!currentSessionPath && !sharedConversation;
+  const canResetSharedConversation = !!currentBridgeSession?.isOwner && !!currentKey;
   const currentLocalLabel = currentLocalSession?.title || currentLocalSession?.firstMessage || '当前对话';
   const tgStatus = statusData.telegram?.status;
   const fsStatus = statusData.feishu?.status;
@@ -455,6 +483,18 @@ export function BridgePanel() {
                         disabled={isLinking}
                       >
                         {isLinking ? '关联中...' : '关联到当前对话'}
+                      </button>
+                    </div>
+                  )}
+
+                  {canResetSharedConversation && (
+                    <div className="bridge-context-actions">
+                      <button
+                        className="bridge-link-btn bridge-link-btn-secondary"
+                        onClick={resetSharedConversation}
+                        disabled={isLinking || isResettingConversation}
+                      >
+                        {isResettingConversation ? '重置中...' : '开始新的共享会话'}
                       </button>
                     </div>
                   )}
