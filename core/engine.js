@@ -240,6 +240,10 @@ export class HanaEngine {
   get homeCwd() { return this._configCoord.getHomeFolder() || null; }
   get authStorage() { return this._models.authStorage; }
   get modelRegistry() { return this._models.modelRegistry; }
+  get preferences() { return this._prefs; }
+
+  /** 刷新可用模型列表（含 OAuth 自定义模型注入） */
+  async refreshModels() { return this._models.refreshAvailable(); }
 
   getHomeFolder() { return this._configCoord.getHomeFolder(); }
   setHomeFolder(f) { return this._configCoord.setHomeFolder(f); }
@@ -401,6 +405,7 @@ export class HanaEngine {
     // 2. Pi SDK
     log(`[init] 2/5 Pi SDK 初始化...`);
     this._models.init();
+    this._models.setPreferences(this._prefs);
     log(`[init] 2/5 AuthStorage + ModelRegistry 就绪`);
 
     // 3. ResourceLoader + Skills

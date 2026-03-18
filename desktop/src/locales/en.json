@@ -432,7 +432,9 @@
       "deviceHint": "Enter this code in the browser to authorize",
       "waiting": "Waiting for authorization…",
       "clickToCopy": "Click to copy",
-      "codeCopied": "Code copied"
+      "codeCopied": "Code copied",
+      "addModel": "Add Model",
+      "customModelPlaceholder": "Enter model ID"
     },
     "api": {
       "title": "Models & API",

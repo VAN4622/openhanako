@@ -106,6 +106,23 @@ export class PreferencesManager {
     this.savePreferences(prefs);
   }
 
+  /** 读取 OAuth 自定义模型 { provider: ["model-id", ...] } */
+  getOAuthCustomModels() {
+    return this.getPreferences().oauth_custom_models || {};
+  }
+
+  /** 设置某个 OAuth provider 的自定义模型列表 */
+  setOAuthCustomModels(provider, modelIds) {
+    const prefs = this.getPreferences();
+    if (!prefs.oauth_custom_models) prefs.oauth_custom_models = {};
+    if (modelIds.length === 0) {
+      delete prefs.oauth_custom_models[provider];
+    } else {
+      prefs.oauth_custom_models[provider] = modelIds;
+    }
+    this.savePreferences(prefs);
+  }
+
   /** 读取 primary agent ID */
   getPrimaryAgent() {
     return this.getPreferences().primaryAgent || null;

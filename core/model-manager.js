@@ -54,10 +54,37 @@ export class ModelManager {
   get modelsJsonPath() { return path.join(this._hanakoHome, "models.json"); }
   get authJsonPath() { return path.join(this._hanakoHome, "auth.json"); }
 
+  /** 注入 PreferencesManager 引用（engine init 时调用） */
+  setPreferences(prefs) { this._prefs = prefs; }
+
   /** 刷新可用模型列表 */
   async refreshAvailable() {
     this._availableModels = await this._modelRegistry.getAvailable();
+    this._injectOAuthCustomModels();
     return this._availableModels;
+  }
+
+  /**
+   * 将用户为 OAuth provider 添加的自定义模型注入到 availableModels
+   * 从同 provider 的已有模型克隆 baseUrl / api / cost 等属性
+   */
+  _injectOAuthCustomModels() {
+    const custom = this._prefs?.getOAuthCustomModels?.() || {};
+    for (const [provider, modelIds] of Object.entries(custom)) {
+      if (!Array.isArray(modelIds) || modelIds.length === 0) continue;
+      // 找同 provider 的模板模型（继承 baseUrl、api、cost 等）
+      const template = this._availableModels.find(m => m.provider === provider);
+      if (!template) continue;
+      const existing = new Set(this._availableModels.filter(m => m.provider === provider).map(m => m.id));
+      for (const id of modelIds) {
+        if (existing.has(id)) continue;
+        this._availableModels.push({
+          ...template,
+          id,
+          name: id,
+        });
+      }
+    }
   }
 
   /**
@@ -80,6 +107,7 @@ export class ModelManager {
       // refresh() 内部调 resetOAuthProviders()，需要重新注册
       registerOAuthProvider(minimaxOAuthProvider);
       this._availableModels = await this._modelRegistry.getAvailable();
+      this._injectOAuthCustomModels();
     }
     return synced;
   }

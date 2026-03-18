@@ -432,7 +432,9 @@
       "deviceHint": "在浏览器中输入此验证码并授权",
       "waiting": "等待授权中…",
       "clickToCopy": "点击复制",
-      "codeCopied": "验证码已复制"
+      "codeCopied": "验证码已复制",
+      "addModel": "添加模型",
+      "customModelPlaceholder": "输入模型 ID"
     },
     "api": {
       "title": "模型与接口",

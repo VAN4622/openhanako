@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useSettingsStore } from '../store';
 import { hanaFetch } from '../api';
 import { t, PROVIDER_PRESETS, API_FORMAT_OPTIONS } from '../helpers';
@@ -250,6 +250,104 @@ export function ProvidersTab() {
   );
 }
 
+// ── OAuth Custom Models ──
+function OAuthCustomModels({ providerId, modelCount, onRefresh }: {
+  providerId: string; modelCount: number; onRefresh: () => void;
+}) {
+  const { showToast } = useSettingsStore();
+  const [customModels, setCustomModels] = useState<string[]>([]);
+  const [inputVal, setInputVal] = useState('');
+  const [adding, setAdding] = useState(false);
+
+  const loadCustom = useCallback(async () => {
+    try {
+      const res = await hanaFetch(`/api/auth/oauth/${providerId}/custom-models`);
+      const data = await res.json();
+      setCustomModels(data.models || []);
+    } catch {}
+  }, [providerId]);
+
+  useEffect(() => { loadCustom(); }, [loadCustom]);
+
+  const addModel = async () => {
+    const id = inputVal.trim();
+    if (!id) return;
+    try {
+      const res = await hanaFetch(`/api/auth/oauth/${providerId}/custom-models`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ modelId: id }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setCustomModels(data.models || []);
+      setInputVal('');
+      setAdding(false);
+      onRefresh();
+      platform?.settingsChanged?.('models-changed');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const removeModel = async (modelId: string) => {
+    try {
+      const res = await hanaFetch(`/api/auth/oauth/${providerId}/custom-models/${encodeURIComponent(modelId)}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      setCustomModels(data.models || []);
+      onRefresh();
+      platform?.settingsChanged?.('models-changed');
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const totalCount = modelCount + customModels.length;
+
+  return (
+    <div className="oauth-provider-models">
+      <span className="provider-item-count">
+        {totalCount > 0
+          ? t('settings.providers.modelCount', { n: totalCount })
+          : t('settings.providers.noModels')}
+      </span>
+      {customModels.length > 0 && (
+        <div className="oauth-custom-models-list">
+          {customModels.map(id => (
+            <div key={id} className="oauth-custom-model-item">
+              <span className="oauth-custom-model-name">{id}</span>
+              <button className="oauth-custom-model-remove" onClick={() => removeModel(id)} title={t('settings.providers.remove')}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
+      {adding ? (
+        <div className="oauth-custom-model-input-row">
+          <input
+            className="settings-input oauth-custom-model-input"
+            type="text"
+            placeholder={t('settings.oauth.customModelPlaceholder')}
+            value={inputVal}
+            onChange={e => setInputVal(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') addModel(); if (e.key === 'Escape') setAdding(false); }}
+            autoFocus
+          />
+          <button className="oauth-custom-model-add-btn" onClick={addModel}>
+            {t('settings.oauth.addModel')}
+          </button>
+        </div>
+      ) : (
+        <button className="oauth-custom-model-trigger" onClick={() => setAdding(true)}>
+          + {t('settings.oauth.addModel')}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // ── OAuth Row ──
 function OAuthRow({ providerId, info, providerConfig, onRefresh }: {
   providerId: string;
@@ -375,13 +473,7 @@ function OAuthRow({ providerId, info, providerConfig, onRefresh }: {
         )}
       </div>
       {info.loggedIn && (
-        <div className="oauth-provider-models">
-          <span className="provider-item-count">
-            {(info.modelCount || 0) > 0
-              ? t('settings.providers.modelCount', { n: info.modelCount })
-              : t('settings.providers.noModels')}
-          </span>
-        </div>
+        <OAuthCustomModels providerId={providerId} modelCount={info.modelCount || 0} onRefresh={onRefresh} />
       )}
       {showCodeInput && (
         <div className="oauth-code-section">

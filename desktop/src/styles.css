@@ -6893,10 +6893,87 @@ body.resizing .jian-sidebar-inner {
 
 .oauth-provider-models {
     display: flex;
-    align-items: center;
-    gap: var(--space-sm);
+    flex-direction: column;
+    gap: 6px;
     padding-left: 2px;
 }
+
+.oauth-custom-models-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.oauth-custom-model-item {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    padding: 3px 6px;
+    border-radius: 4px;
+}
+
+.oauth-custom-model-item:hover { background: var(--bg-hover); }
+
+.oauth-custom-model-name {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.oauth-custom-model-remove {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+}
+
+.oauth-custom-model-item:hover .oauth-custom-model-remove { opacity: 1; }
+.oauth-custom-model-remove:hover { color: var(--text-primary); }
+
+.oauth-custom-model-input-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.oauth-custom-model-input {
+    flex: 1;
+    font-size: 0.78rem;
+    padding: 4px 8px;
+}
+
+.oauth-custom-model-add-btn {
+    font-size: 0.72rem;
+    padding: 4px 10px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.oauth-custom-model-add-btn:hover { background: var(--bg-hover); }
+
+.oauth-custom-model-trigger {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px 0;
+    text-align: left;
+}
+
+.oauth-custom-model-trigger:hover { color: var(--text-secondary); }
 
 .oauth-provider-name {
     font-size: 0.85rem;
