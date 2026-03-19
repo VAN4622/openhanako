@@ -136,7 +136,9 @@ async function ensureSession(): Promise<boolean> {
 
   try {
     const body: Record<string, any> = { memoryEnabled: state().memoryEnabled };
-    if (state().selectedFolder) {
+    // Remote gateway sessions run on the server's workspace semantics.
+    // Do not forward a client-local cwd (for example C:\...) to a Linux backend.
+    if (state().selectedFolder && state().serverMode !== 'remote') {
       body.cwd = state().selectedFolder;
     }
     if (state().selectedAgentId && state().selectedAgentId !== state().currentAgentId) {
