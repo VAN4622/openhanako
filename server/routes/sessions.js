@@ -134,6 +134,7 @@ export default async function sessionsRoute(app, { engine }) {
         agentName: s.agentName || null,
       }));
     } catch (err) {
+      console.error("[sessions] create failed:", err);
       reply.code(500);
       return { error: err.message };
     }
