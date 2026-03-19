@@ -11,6 +11,7 @@ import { useStore } from '../stores';
 import { hanaUrl } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
 import { loadDeskFiles } from '../stores/desk-actions';
+import { clearChat } from '../stores/agent-actions';
 import type { Agent } from '../types';
 import { yuanFallbackAvatar } from '../utils/agent-helpers';
 
@@ -352,8 +353,6 @@ function applyFolderAction(folder: string, pendingNewSession: boolean): void {
       currentSessionPath: null,
       pendingNewSession: true,
     });
-    // Clear chat via agent-actions
-    const { clearChat } = require('../stores/agent-actions');
     clearChat();
     (document.getElementById('inputBox') as HTMLTextAreaElement | null)?.focus();
   }

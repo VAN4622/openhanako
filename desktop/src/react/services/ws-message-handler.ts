@@ -12,7 +12,10 @@ import { loadSessions as loadSessionsAction } from '../stores/session-actions';
 import { handleArtifact } from '../stores/artifact-actions';
 import { loadDeskFiles } from '../stores/desk-actions';
 import { showError } from '../utils/ui-helpers';
-import { getWebSocket } from './websocket';
+// 延迟获取避免循环依赖：ws-message-handler → websocket → ws-message-handler
+let _getWs: (() => WebSocket | null) | null = null;
+export function _injectGetWs(fn: () => WebSocket | null) { _getWs = fn; }
+const getWebSocket = () => _getWs?.() ?? null;
 import {
   replayStreamResume,
   isStreamResumeRebuilding,

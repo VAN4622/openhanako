@@ -7,8 +7,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { handleServerMessage, applyStreamingStatus } from './ws-message-handler';
-import { requestStreamResume, injectHandlers } from './stream-resume';
+import { handleServerMessage, applyStreamingStatus, _injectGetWs as _injectGetWsHandler } from './ws-message-handler';
+import { requestStreamResume, injectHandlers, _injectGetWs as _injectGetWsResume } from './stream-resume';
 import { useStore } from '../stores';
 import { setStatus } from '../utils/ui-helpers';
 
@@ -23,8 +23,10 @@ const WS_RETRY_MAX = 30000;
 let _wsRetryTimer: ReturnType<typeof setTimeout> | null = null;
 let _wsResumeVersion = 0;
 
-// 注入循环依赖的 handlers
+// 注入循环依赖的 handlers + getWebSocket
 injectHandlers(handleServerMessage, applyStreamingStatus);
+_injectGetWsHandler(() => _ws);
+_injectGetWsResume(() => _ws);
 
 /** 获取当前 WebSocket 实例 */
 export function getWebSocket(): WebSocket | null {

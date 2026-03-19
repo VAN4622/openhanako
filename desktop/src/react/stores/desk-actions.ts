@@ -6,7 +6,15 @@
 
 import { useStore } from './index';
 import { hanaFetch } from '../hooks/use-hana-fetch';
-import { hideFloatCard, applyTbToggleState } from '../components/SidebarLayout';
+import { clearChat } from './agent-actions';
+
+// 延迟获取避免循环依赖：desk-actions → SidebarLayout → desk-actions
+let _hideFloatCardFn: (() => void) | null = null;
+let _applyTbToggleFn: (() => void) | null = null;
+export function _injectSidebarFns(hide: () => void, toggle: () => void) {
+  _hideFloatCardFn = hide;
+  _applyTbToggleFn = toggle;
+}
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -212,7 +220,6 @@ export function applyFolder(folder: string): void {
   const s = useStore.getState();
   if (!s.pendingNewSession) {
     useStore.setState({ currentSessionPath: null, pendingNewSession: true });
-    const { clearChat } = require('./agent-actions');
     clearChat();
     (document.getElementById('inputBox') as HTMLTextAreaElement | null)?.focus();
   }
@@ -237,11 +244,11 @@ export function toggleJianSidebar(forceOpen?: boolean): void {
   const jianSidebar = document.getElementById('jianSidebar');
   if (newOpen) {
     jianSidebar?.classList.remove('collapsed');
-    hideFloatCard();
+    _hideFloatCardFn?.();
   } else {
     jianSidebar?.classList.add('collapsed');
   }
-  applyTbToggleState();
+  _applyTbToggleFn?.();
 }
 
 export function initJian(): void {

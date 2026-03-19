@@ -11,12 +11,15 @@ import { useStore } from '../stores';
 import { hanaUrl } from '../hooks/use-hana-fetch';
 import { createNewSession, switchSession } from '../stores/session-actions';
 import { yuanFallbackAvatar } from '../utils/agent-helpers';
-import { closePreview } from '../stores/artifact-actions';
-import { toggleJianSidebar, saveJianContent } from '../stores/desk-actions';
+import { closePreview, _injectUpdateLayout } from '../stores/artifact-actions';
+import { toggleJianSidebar, saveJianContent, _injectSidebarFns } from '../stores/desk-actions';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 const CHAT_MIN_WIDTH = 400;
+
+// 注入循环依赖的函数引用（在模块加载时立即执行）
+// updateLayout / hideFloatCard / applyTbToggleState 定义在下方
 
 function getSidebarWidth(): number {
   return parseInt(getComputedStyle(document.documentElement).getPropertyValue('--sidebar-width')) || 240;
@@ -304,6 +307,10 @@ export function hideFloatCard(): void {
     _floatCard = null;
   }
 }
+
+// 注入函数引用以打破循环依赖
+_injectUpdateLayout(updateLayout);
+_injectSidebarFns(hideFloatCard, applyTbToggleState);
 
 function buildSessionList(card: HTMLElement): void {
   const s = useStore.getState();

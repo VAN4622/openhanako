@@ -9,7 +9,10 @@
 
 import { streamBufferManager } from '../hooks/use-stream-buffer';
 import { useStore } from '../stores';
-import { getWebSocket } from './websocket';
+// 延迟获取避免循环依赖：stream-resume → websocket → stream-resume
+let _getWs: (() => WebSocket | null) | null = null;
+export function _injectGetWs(fn: () => WebSocket | null) { _getWs = fn; }
+const getWebSocket = () => _getWs?.() ?? null;
 import { clearChat } from '../stores/agent-actions';
 import { loadMessages } from '../stores/session-actions';
 

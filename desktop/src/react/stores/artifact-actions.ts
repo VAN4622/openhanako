@@ -5,8 +5,11 @@
  */
 
 import { useStore } from './index';
-import { updateLayout } from '../components/SidebarLayout';
 import type { Artifact } from '../types';
+
+// 延迟获取避免循环依赖：artifact-actions → SidebarLayout → artifact-actions
+let _updateLayoutFn: (() => void) | null = null;
+export function _injectUpdateLayout(fn: () => void) { _updateLayoutFn = fn; }
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -21,14 +24,14 @@ export function openPreview(artifact: Artifact): void {
   s.setArtifacts(arts);
   s.setCurrentArtifactId(artifact.id);
   s.setPreviewOpen(true);
-  updateLayout();
+  _updateLayoutFn?.();
 }
 
 export function closePreview(): void {
   const s = useStore.getState();
   s.setPreviewOpen(false);
   s.setCurrentArtifactId(null);
-  updateLayout();
+  _updateLayoutFn?.();
 }
 
 /** 注册 artifact 到全局 store（流式事件 + 点击卡片都走这里） */

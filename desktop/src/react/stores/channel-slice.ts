@@ -1,5 +1,24 @@
 import type { Channel, ChannelMessage } from '../types';
-import { hanaFetch } from '../hooks/use-hana-fetch';
+
+// 内联 fetch 避免循环依赖：channel-slice ✗→ use-hana-fetch → stores/index → channel-slice
+// _storeGet 在 createChannelSlice 时绑定
+let _storeGet: (() => Record<string, any>) | null = null;
+
+async function _fetch(path: string, opts: RequestInit & { timeout?: number } = {}): Promise<Response> {
+  const s = _storeGet?.() ?? {};
+  const port = s.serverPort;
+  const token = s.serverToken;
+  const headers: Record<string, string> = { ...(opts.headers as Record<string, string> || {}) };
+  if (token) headers['Authorization'] = `Bearer ${token}`;
+  const { timeout = 30000, ...fetchOpts } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}${path}`, { ...fetchOpts, headers, signal: controller.signal });
+    if (!res.ok) throw new Error(`fetch ${path}: ${res.status}`);
+    return res;
+  } finally { clearTimeout(timer); }
+}
 
 export interface ChannelSlice {
   channels: Channel[];
@@ -30,7 +49,9 @@ type Get = () => ChannelSlice & Record<string, any>;
 export const createChannelSlice = (
   set: (partial: Partial<ChannelSlice> | ((s: ChannelSlice) => Partial<ChannelSlice>)) => void,
   get?: Get,
-): ChannelSlice => ({
+): ChannelSlice => {
+  if (get) _storeGet = get as () => Record<string, any>;
+  return ({
   channels: [],
   currentChannel: null,
   channelMessages: [],
@@ -55,8 +76,8 @@ export const createChannelSlice = (
     if (!s.serverPort) return;
     try {
       const [chRes, dmRes] = await Promise.all([
-        hanaFetch('/api/channels'),
-        hanaFetch('/api/dm'),
+        _fetch('/api/channels'),
+        _fetch('/api/dm'),
       ]);
 
       const chData = chRes.ok ? await chRes.json() : { channels: [] };
@@ -100,7 +121,7 @@ export const createChannelSlice = (
     try {
       if (isThisDM) {
         const peerId = ch?.peerId || channelId.replace('dm:', '');
-        const res = await hanaFetch(`/api/dm/${encodeURIComponent(peerId)}`);
+        const res = await _fetch(`/api/dm/${encodeURIComponent(peerId)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         set({
@@ -112,7 +133,7 @@ export const createChannelSlice = (
           channelInfoName: data.peerName || peerId,
         });
       } else {
-        const res = await hanaFetch(`/api/channels/${encodeURIComponent(channelId)}`);
+        const res = await _fetch(`/api/channels/${encodeURIComponent(channelId)}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         const members = data.members || [];
@@ -130,7 +151,7 @@ export const createChannelSlice = (
         const msgs = data.messages || [];
         const lastMsg = msgs[msgs.length - 1];
         if (lastMsg) {
-          hanaFetch(`/api/channels/${encodeURIComponent(channelId)}/read`, {
+          _fetch(`/api/channels/${encodeURIComponent(channelId)}/read`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ timestamp: lastMsg.timestamp }),
@@ -155,7 +176,7 @@ export const createChannelSlice = (
     if (!text.trim() || !s.currentChannel) return;
 
     try {
-      const res = await hanaFetch(`/api/channels/${encodeURIComponent(s.currentChannel)}/messages`, {
+      const res = await _fetch(`/api/channels/${encodeURIComponent(s.currentChannel)}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ body: text }),
@@ -179,7 +200,7 @@ export const createChannelSlice = (
   deleteChannel: async (channelId: string) => {
     const s = get!();
     try {
-      const res = await hanaFetch(`/api/channels/${encodeURIComponent(channelId)}`, {
+      const res = await _fetch(`/api/channels/${encodeURIComponent(channelId)}`, {
         method: 'DELETE',
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -215,7 +236,7 @@ export const createChannelSlice = (
     }
 
     try {
-      await hanaFetch('/api/channels/toggle', {
+      await _fetch('/api/channels/toggle', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ enabled: newEnabled }),
@@ -229,7 +250,7 @@ export const createChannelSlice = (
 
   createChannel: async (name: string, members: string[], intro?: string) => {
     try {
-      const res = await hanaFetch('/api/channels', {
+      const res = await _fetch('/api/channels', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -253,3 +274,4 @@ export const createChannelSlice = (
     }
   },
 });
+};
