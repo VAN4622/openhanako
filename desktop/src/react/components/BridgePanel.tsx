@@ -64,6 +64,7 @@ interface ConversationSnapshot {
 
 export function BridgePanel() {
   const activePanel = useStore(s => s.activePanel);
+  const panelClosing = useStore(s => s.panelClosing);
   const setActivePanel = useStore(s => s.setActivePanel);
   const currentSessionPath = useStore(s => s.currentSessionPath);
   const localSessions = useStore(s => s.sessions);
@@ -337,7 +338,7 @@ export function BridgePanel() {
   const qqStatus = statusData.qq?.status;
 
   return createPortal(
-    <div className="floating-panel bridge-panel-wide" id="bridgePanel">
+    <div className={`floating-panel bridge-panel-wide${panelClosing ? ' closing' : ''}`} id="bridgePanel">
       <div className="floating-panel-inner">
         <div className="floating-panel-header">
           <div className="bridge-tabs" id="bridgeTabs">

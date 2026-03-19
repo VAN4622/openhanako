@@ -198,4 +198,40 @@ export default async function authRoute(app, { engine }) {
     engine.authStorage.logout(provider);
     return { ok: true };
   });
+
+  // ── OAuth 自定义模型 ──
+
+  /** 获取某个 OAuth provider 的自定义模型列表 */
+  app.get("/api/auth/oauth/:provider/custom-models", async (req) => {
+    const custom = engine.preferences.getOAuthCustomModels();
+    return { models: custom[req.params.provider] || [] };
+  });
+
+  /** 添加自定义模型到 OAuth provider */
+  app.post("/api/auth/oauth/:provider/custom-models", async (req, reply) => {
+    const { provider } = req.params;
+    const { modelId } = req.body || {};
+    if (!modelId || typeof modelId !== "string" || !modelId.trim()) {
+      reply.code(400);
+      return { error: "modelId is required" };
+    }
+    const id = modelId.trim();
+    const custom = engine.preferences.getOAuthCustomModels();
+    const list = custom[provider] || [];
+    if (list.includes(id)) return { ok: true, models: list };
+    list.push(id);
+    engine.preferences.setOAuthCustomModels(provider, list);
+    await engine.refreshModels();
+    return { ok: true, models: list };
+  });
+
+  /** 删除 OAuth provider 的某个自定义模型 */
+  app.delete("/api/auth/oauth/:provider/custom-models/:modelId", async (req, reply) => {
+    const { provider, modelId } = req.params;
+    const custom = engine.preferences.getOAuthCustomModels();
+    const list = (custom[provider] || []).filter(id => id !== modelId);
+    engine.preferences.setOAuthCustomModels(provider, list);
+    await engine.refreshModels();
+    return { ok: true, models: list };
+  });
 }

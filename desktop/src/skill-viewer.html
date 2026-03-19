@@ -109,6 +109,17 @@
             opacity: 0.9;
         }
 
+        .sv-btn-outline {
+            background: transparent;
+            color: var(--accent, #bfa97a);
+            border-color: var(--accent, #bfa97a);
+        }
+
+        .sv-btn-outline:hover {
+            background: var(--accent, #bfa97a);
+            color: #fff;
+        }
+
         /* ── 主体 ── */
         .sv-body {
             flex: 1;
@@ -282,7 +293,7 @@
             <span id="svFileName"> / SKILL.md</span>
         </div>
         <div class="sv-topbar-actions">
-            <button class="sv-btn sv-btn-primary" id="svCopyBtn" style="display:none">Copy to your skills</button>
+            <button class="sv-btn sv-btn-outline" id="svCopyBtn" style="display:none"></button>
         </div>
     </div>
 
@@ -343,6 +354,7 @@
     window.hana.onSkillViewerLoad(async (skillInfo) => {
         currentSkill = skillInfo;
         svSkillName.textContent = skillInfo.name || "Skill";
+        svCopyBtn.textContent = window.t?.('settings.skills.copyToSkills') || '复制到我的技能';
         svCopyBtn.style.display = skillInfo.installed ? "none" : "";
 
         const files = await window.hana.listSkillFiles(skillInfo.baseDir);

@@ -25,11 +25,12 @@ const _ws = () => window.HanaModules.appWs;
 const _ui = () => window.HanaModules.appUi;
 
 // Activity / Automation / Bridge：React 渲染，这里只 toggle store state
-const showActivityPanel = () => { state.activePanel = "activity"; };
-const hideActivityPanel = () => { if (state.activePanel === "activity") state.activePanel = null; };
+const _setPanel = (p) => { const s = _zustandGet?.(); if (s?.setActivePanel) s.setActivePanel(p); else state.activePanel = p; };
+const showActivityPanel = () => _setPanel("activity");
+const hideActivityPanel = () => { if (state.activePanel === "activity") _setPanel(null); };
 const isActivityVisible = () => state.activePanel === "activity";
-const showAutomationPanel = () => { state.activePanel = "automation"; };
-const hideAutomationPanel = () => { if (state.activePanel === "automation") state.activePanel = null; };
+const showAutomationPanel = () => _setPanel("automation");
+const hideAutomationPanel = () => { if (state.activePanel === "automation") _setPanel(null); };
 const isAutomationVisible = () => state.activePanel === "automation";
 const renderActivityPanel = () => {};
 const closeActivityDetail = () => {};
@@ -420,8 +421,8 @@ async function init() {
     else showAutomationPanel();
   });
   $("#bridgeBar")?.addEventListener("click", () => {
-    if (state.activePanel === "bridge") state.activePanel = null;
-    else state.activePanel = "bridge";
+    if (state.activePanel === "bridge") _setPanel(null);
+    else _setPanel("bridge");
   });
 
   loadAutomationBadge();
@@ -447,6 +448,10 @@ async function init() {
           agentId: data.agentId,
         });
         _sb().loadSessions();
+        window.__loadDeskSkills?.();
+        break;
+      case "skills-changed":
+        window.__loadDeskSkills?.();
         break;
       case "locale-changed":
         i18n.load(data.locale).then(() => {

@@ -1,31 +1,35 @@
 /**
  * SkillManager — Skill 加载、过滤、per-agent 隔离
  *
- * 管理全量 skill 列表、learned skills 扫描、per-agent 隔离过滤。
+ * 管理全量 skill 列表、learned skills 扫描、外部兼容技能扫描、per-agent 隔离过滤。
  * 从 Engine 提取，Engine 通过 manager 访问 skill 状态。
  */
 import fs from "fs";
 import path from "path";
+import { parseSkillMetadata } from "../lib/skills/skill-metadata.js";
 
 export class SkillManager {
   /**
    * @param {object} opts
    * @param {string} opts.skillsDir - 全局 skills 目录
+   * @param {Array<{ dirPath: string, label: string }>} [opts.externalPaths] - 外部兼容技能目录
    */
-  constructor({ skillsDir }) {
+  constructor({ skillsDir, externalPaths = [] }) {
     this.skillsDir = skillsDir;
     this._allSkills = [];
     this._hiddenSkills = new Set();
     this._watcher = null;
     this._reloadTimer = null;
     this._reloadDeps = null; // { resourceLoader, agents, onReloaded }
+    this._externalPaths = externalPaths;
+    this._externalWatchers = new Map();
   }
 
   /** 全量 skill 列表 */
   get allSkills() { return this._allSkills; }
 
   /**
-   * 首次加载：从 resourceLoader 获取内置 skills + 合并所有 agent 的 learned skills
+   * 首次加载：从 resourceLoader 获取内置 skills + 合并所有 agent 的 learned skills + 外部技能
    * @param {object} resourceLoader - Pi SDK DefaultResourceLoader 实例
    * @param {Map} agents - agent Map
    * @param {Set<string>} hiddenSkills - 需要隐藏的 skill name 集合
@@ -39,6 +43,7 @@ export class SkillManager {
     for (const [, ag] of agents) {
       this._allSkills.push(...this.scanLearnedSkills(ag.agentDir));
     }
+    this._appendExternalSkills();
   }
 
   /** 将 agent 启用的 skill 同步到 agent 的 system prompt */
@@ -59,6 +64,9 @@ export class SkillManager {
       source: s.source,
       hidden: !!s._hidden,
       enabled: enabled.includes(s.name),
+      externalLabel: s._externalLabel || null,
+      externalPath: s._externalPath || null,
+      readonly: !!s._readonly,
     }));
   }
 
@@ -95,6 +103,7 @@ export class SkillManager {
     for (const [, ag] of agents) {
       this._allSkills.push(...this.scanLearnedSkills(ag.agentDir));
     }
+    this._appendExternalSkills();
   }
 
   /**
@@ -116,6 +125,7 @@ export class SkillManager {
         console.error("[skill-manager] watcher error:", err.message);
       });
     } catch {}
+    this._watchExternalPaths();
   }
 
   async _autoReload() {
@@ -134,7 +144,96 @@ export class SkillManager {
     if (this._watcher) { this._watcher.close(); this._watcher = null; }
     if (this._reloadTimer) { clearTimeout(this._reloadTimer); this._reloadTimer = null; }
     this._reloadDeps = null;
+    this._closeExternalWatchers();
   }
+
+  /**
+   * 更新外部路径（纯数据更新 + 重建 watcher，不触发 reload）
+   * @param {Array<{ dirPath: string, label: string }>} paths
+   */
+  setExternalPaths(paths) {
+    this._externalPaths = paths;
+    this._closeExternalWatchers();
+    if (this._reloadDeps) {
+      this._watchExternalPaths();
+    }
+  }
+
+  // ── 外部技能扫描 ──
+
+  /**
+   * 扫描所有外部路径下的技能
+   * @returns {Array} 外部技能列表
+   */
+  scanExternalSkills() {
+    const results = [];
+    for (const { dirPath, label } of this._externalPaths) {
+      if (!fs.existsSync(dirPath)) continue;
+      try {
+        for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+          if (!entry.isDirectory()) continue;
+          const skillFile = path.join(dirPath, entry.name, "SKILL.md");
+          if (!fs.existsSync(skillFile)) continue;
+          try {
+            const content = fs.readFileSync(skillFile, "utf-8");
+            const meta = parseSkillMetadata(content, entry.name);
+            results.push({
+              name: meta.name,
+              description: meta.description,
+              filePath: skillFile,
+              baseDir: path.join(dirPath, entry.name),
+              source: "external",
+              disableModelInvocation: meta.disableModelInvocation,
+              _agentId: null,
+              _hidden: false,
+              _externalLabel: label,
+              _externalPath: dirPath,
+              _readonly: true,
+            });
+          } catch {}
+        }
+      } catch {}
+    }
+    return results;
+  }
+
+  /** 将外部技能追加到 _allSkills（去重：内部优先） */
+  _appendExternalSkills() {
+    const existingNames = new Set(this._allSkills.map(s => s.name));
+    for (const ext of this.scanExternalSkills()) {
+      if (!existingNames.has(ext.name)) {
+        this._allSkills.push(ext);
+        existingNames.add(ext.name);
+      }
+    }
+  }
+
+  // ── 外部路径 watcher ──
+
+  _watchExternalPaths() {
+    for (const { dirPath } of this._externalPaths) {
+      if (!fs.existsSync(dirPath)) continue;
+      if (this._externalWatchers.has(dirPath)) continue;
+      try {
+        const w = fs.watch(dirPath, { recursive: true }, (_event, filename) => {
+          if (filename && (/^\./.test(filename) || /[~#]$/.test(filename))) return;
+          if (this._reloadTimer) clearTimeout(this._reloadTimer);
+          this._reloadTimer = setTimeout(() => this._autoReload(), 1000);
+        });
+        w.on("error", () => {});
+        this._externalWatchers.set(dirPath, w);
+      } catch {}
+    }
+  }
+
+  _closeExternalWatchers() {
+    for (const [, w] of this._externalWatchers) {
+      try { w.close(); } catch {}
+    }
+    this._externalWatchers.clear();
+  }
+
+  // ── 自学技能扫描 ──
 
   /**
    * 扫描 agentDir/learned-skills/ 下的自学 skills
@@ -151,14 +250,14 @@ export class SkillManager {
       if (!fs.existsSync(skillFile)) continue;
       try {
         const content = fs.readFileSync(skillFile, "utf-8");
-        const descMatch = content.match(/^description:\s*(.+?)\s*$/m);
-        const description = descMatch ? descMatch[1].replace(/["']/g, "") : "";
+        const meta = parseSkillMetadata(content, entry.name);
         results.push({
-          name: entry.name,
-          description,
+          name: meta.name,
+          description: meta.description,
           filePath: skillFile,
           baseDir: path.join(learnedDir, entry.name),
           source: "learned",
+          disableModelInvocation: meta.disableModelInvocation,
           _agentId: agentId,
           _hidden: false,
         });

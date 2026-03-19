@@ -2,7 +2,7 @@
  * 配置管理 REST 路由
  */
 import fs from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import path from "path";
 import { t } from "../i18n.js";
 import { debugLog } from "../../lib/debug-log.js";
@@ -131,6 +131,39 @@ export default async function configRoute(app, { engine }) {
       // providers 块 → 全局 providers.yaml
       let providersChanged = false;
       if (partial.providers) {
+        // 删除 provider 时（值为 null），同步清理 models.json + favorites
+        const deletedProviders = Object.keys(partial.providers)
+          .filter(name => partial.providers[name] === null);
+        if (deletedProviders.length > 0) {
+          try {
+            const modelsJsonPath = engine.modelsJsonPath;
+            const modelsJson = JSON.parse(readFileSync(modelsJsonPath, "utf-8"));
+            // 收集被删 provider 下的所有模型 ID
+            const orphanedModels = new Set();
+            let changed = false;
+            for (const name of deletedProviders) {
+              const provData = modelsJson.providers?.[name];
+              if (provData) {
+                for (const m of (provData.models || [])) {
+                  orphanedModels.add(typeof m === "string" ? m : m?.id);
+                }
+                delete modelsJson.providers[name];
+                changed = true;
+              }
+            }
+            if (changed) {
+              writeFileSync(modelsJsonPath, JSON.stringify(modelsJson, null, 4) + "\n", "utf-8");
+            }
+            // 从 favorites 中移除已删 provider 的模型
+            if (orphanedModels.size > 0) {
+              const favorites = engine.readFavorites();
+              const cleaned = favorites.filter(id => !orphanedModels.has(id));
+              if (cleaned.length !== favorites.length) {
+                await engine.saveFavorites(cleaned);
+              }
+            }
+          } catch {}
+        }
         saveGlobalProviders({ providers: partial.providers });
         delete partial.providers;
         providersChanged = true;

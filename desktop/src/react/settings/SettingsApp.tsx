@@ -12,7 +12,6 @@ import { WorkTab } from './tabs/WorkTab';
 import { SkillsTab } from './tabs/SkillsTab';
 import { BridgeTab } from './tabs/BridgeTab';
 import { ProvidersTab } from './tabs/ProvidersTab';
-import { ModelsTab } from './tabs/ModelsTab';
 import { AboutTab } from './tabs/AboutTab';
 import { CropOverlay } from './overlays/CropOverlay';
 import { AgentCreateOverlay } from './overlays/AgentCreateOverlay';
@@ -32,7 +31,6 @@ const TAB_COMPONENTS: Record<string, React.ComponentType> = {
   skills: SkillsTab,
   bridge: BridgeTab,
   providers: ProvidersTab,
-  models: ModelsTab,
   about: AboutTab,
 };
 

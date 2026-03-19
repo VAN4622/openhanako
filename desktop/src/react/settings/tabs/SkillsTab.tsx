@@ -7,10 +7,19 @@ import { loadSettingsConfig } from '../actions';
 
 const platform = (window as any).platform;
 
+interface ExternalPathsData {
+  configured: string[];
+  discovered: { dirPath: string; label: string; exists: boolean }[];
+}
+
 export function SkillsTab() {
   const { skillsList, settingsConfig, showToast } = useSettingsStore();
 
   const [reloading, setReloading] = useState(false);
+  const [externalPathsData, setExternalPathsData] = useState<ExternalPathsData>({
+    configured: [],
+    discovered: [],
+  });
 
   const loadSkills = useCallback(async () => {
     try {
@@ -19,6 +28,19 @@ export function SkillsTab() {
       useSettingsStore.setState({ skillsList: data.skills || [] });
     } catch (err) {
       console.error('[skills] load failed:', err);
+    }
+  }, []);
+
+  const loadExternalPaths = useCallback(async () => {
+    try {
+      const res = await hanaFetch('/api/skills/external-paths');
+      const data = await res.json();
+      setExternalPathsData({
+        configured: data.configured || [],
+        discovered: data.discovered || [],
+      });
+    } catch (err) {
+      console.error('[skills] load external paths failed:', err);
     }
   }, []);
 
@@ -42,11 +64,13 @@ export function SkillsTab() {
 
   useEffect(() => {
     loadSkills();
-  }, [loadSkills]);
+    loadExternalPaths();
+  }, [loadSkills, loadExternalPaths]);
 
   const visible = skillsList.filter(s => !s.hidden);
-  const userSkills = visible.filter(s => s.source !== 'learned');
+  const userSkills = visible.filter(s => s.source !== 'learned' && s.source !== 'external');
   const learnedSkills = visible.filter(s => s.source === 'learned');
+  const externalSkills = visible.filter(s => s.source === 'external');
 
   // 后台翻译技能名
   const [nameHints, setNameHints] = useState<Record<string, string>>({});
@@ -123,6 +147,7 @@ export function SkillsTab() {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       showToast(t('settings.autoSaved'), 'success');
+      platform?.notifyMainWindow?.('skills-changed', {});
     } catch (err: any) {
       // 回滚
       const reverted = skillsList.map(s => s.name === name ? { ...s, enabled: !enable } : s);
@@ -136,6 +161,43 @@ export function SkillsTab() {
     (e.currentTarget as HTMLElement).classList.remove('drag-over');
     const file = e.dataTransfer.files[0];
     if ((file as any)?.path) await installSkillFromPath((file as any).path);
+  };
+
+  // 外部路径管理
+  const addExternalPath = async () => {
+    const folder = await platform?.selectFolder?.();
+    if (!folder) return;
+    const newPaths = [...externalPathsData.configured, folder];
+    try {
+      await hanaFetch('/api/skills/external-paths', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: newPaths }),
+      });
+      await loadExternalPaths();
+      await loadSkills();
+      showToast(t('settings.autoSaved'), 'success');
+      platform?.notifyMainWindow?.('skills-changed', {});
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
+  };
+
+  const removeExternalPath = async (pathToRemove: string) => {
+    const newPaths = externalPathsData.configured.filter(p => p !== pathToRemove);
+    try {
+      await hanaFetch('/api/skills/external-paths', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ paths: newPaths }),
+      });
+      await loadExternalPaths();
+      await loadSkills();
+      showToast(t('settings.autoSaved'), 'success');
+      platform?.notifyMainWindow?.('skills-changed', {});
+    } catch (err: any) {
+      showToast(err.message, 'error');
+    }
   };
 
   // 工具权限
@@ -168,6 +230,12 @@ export function SkillsTab() {
     );
     await loadSettingsConfig();
   };
+
+  // discovered 路径中排除已在 configured 里的
+  const discoveredPaths = externalPathsData.discovered;
+  const configuredOnlyPaths = externalPathsData.configured.filter(
+    p => !discoveredPaths.some(d => d.dirPath === p),
+  );
 
   return (
     <div className="settings-tab-content active" data-tab="skills">
@@ -303,6 +371,47 @@ export function SkillsTab() {
         <p className="settings-hint">{t('settings.skills.learnHint')}</p>
       </section>
 
+      {/* 兼容技能 */}
+      <section className="settings-section">
+        <h2 className="settings-section-title">{t('settings.skills.compatTitle') || '兼容技能'}</h2>
+        <p className="settings-desc">{t('settings.skills.compatDesc') || '自动发现其他 AI 工具安装的技能'}</p>
+
+        <div className="compat-paths-group">
+          {discoveredPaths.map(d => (
+            <CompatPathDrawer
+              key={d.dirPath}
+              dirPath={d.dirPath}
+              label={d.label}
+              exists={d.exists}
+              isCustom={false}
+              skills={externalSkills.filter(s => s.externalPath === d.dirPath)}
+              nameHints={nameHints}
+              onToggle={toggleSkill}
+              onRemove={removeExternalPath}
+            />
+          ))}
+          {configuredOnlyPaths.map(p => (
+            <CompatPathDrawer
+              key={p}
+              dirPath={p}
+              label={null}
+              exists={true}
+              isCustom={true}
+              skills={externalSkills.filter(s => s.externalPath === p)}
+              nameHints={nameHints}
+              onToggle={toggleSkill}
+              onRemove={removeExternalPath}
+            />
+          ))}
+          <button className="compat-add-path" onClick={addExternalPath}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            <span>{t('settings.skills.compatAddPath') || '添加目录'}</span>
+          </button>
+        </div>
+      </section>
+
       {showGithubWarning && (
         <div className="hana-warning-overlay" onClick={() => setShowGithubWarning(false)}>
           <div className="hana-warning-box" onClick={(e) => e.stopPropagation()}>
@@ -414,6 +523,118 @@ function SkillRow({ skill, nameHint, onDelete, onToggle }: {
           onClick={(e) => { e.stopPropagation(); onToggle(skill.name, !skill.enabled); }}
         />
       </div>
+    </div>
+  );
+}
+
+function ExternalSkillRow({ skill, nameHint, onToggle }: {
+  skill: SkillInfo;
+  nameHint?: string;
+  onToggle: (name: string, enabled: boolean) => void;
+}) {
+  const rawDesc = skill.description || '';
+  const cnMatch = rawDesc.match(/[\u4e00-\u9fff].*$/s);
+  let displayDesc = cnMatch ? cnMatch[0] : rawDesc;
+  displayDesc = displayDesc.replace(/\s*MANDATORY TRIGGERS:.*$/si, '').trim();
+  if (displayDesc.length > 80) displayDesc = displayDesc.slice(0, 80) + '…';
+
+  return (
+    <div
+      className="skills-list-item"
+      onClick={() => {
+        if (skill.baseDir) {
+          (window as any).platform?.openSkillViewer?.({
+            name: skill.name,
+            baseDir: skill.baseDir,
+            filePath: skill.filePath,
+            installed: true,
+          });
+        }
+      }}
+    >
+      <div className="skills-list-info">
+        <span className="skills-list-name">
+          {skill.name}
+          {nameHint && <span className="skills-list-name-hint">{nameHint}</span>}
+        </span>
+        <span className="skills-list-desc">{displayDesc}</span>
+      </div>
+      <div className="skills-list-actions">
+        <button
+          className={`hana-toggle${skill.enabled ? ' on' : ''}`}
+          onClick={(e) => { e.stopPropagation(); onToggle(skill.name, !skill.enabled); }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function CompatPathDrawer({ dirPath, label, exists, isCustom, skills, nameHints, onToggle, onRemove }: {
+  dirPath: string;
+  label: string | null;
+  exists: boolean;
+  isCustom: boolean;
+  skills: SkillInfo[];
+  nameHints: Record<string, string>;
+  onToggle: (name: string, enabled: boolean) => void;
+  onRemove: (path: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const displayLabel = label || dirPath.split('/').filter(Boolean).pop() || dirPath;
+  const skillCount = skills.length;
+
+  return (
+    <div className="compat-drawer">
+      <button
+        className={`compat-drawer-header${!exists ? ' disabled' : ''}`}
+        onClick={() => { if (exists && skillCount > 0) setOpen(prev => !prev); }}
+      >
+        <svg
+          className={`compat-drawer-chevron${open ? ' open' : ''}`}
+          width="10" height="10" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+          style={{ opacity: exists && skillCount > 0 ? 1 : 0.2 }}
+        >
+          <polyline points="9 18 15 12 9 6" />
+        </svg>
+        <div className="compat-drawer-info">
+          <span className="compat-drawer-label">{displayLabel}</span>
+          {isCustom && <span className="compat-drawer-path">{dirPath}</span>}
+        </div>
+        <div className="compat-drawer-meta">
+          {!exists ? (
+            <span className="compat-path-badge muted">{t('settings.skills.compatNotInstalled') || '未安装'}</span>
+          ) : skillCount > 0 ? (
+            <span className="compat-path-badge">{skillCount}</span>
+          ) : (
+            <span className="compat-path-badge muted">0</span>
+          )}
+          {isCustom && (
+            <button
+              className="compat-path-remove"
+              onClick={(e) => { e.stopPropagation(); onRemove(dirPath); }}
+              title={t('settings.skills.compatRemove') || '移除'}
+              style={{ opacity: 1 }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          )}
+        </div>
+      </button>
+      {open && skillCount > 0 && (
+        <div className="compat-drawer-skills">
+          {skills.map(skill => (
+            <ExternalSkillRow
+              key={skill.name}
+              skill={skill}
+              nameHint={nameHints[skill.name]}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
