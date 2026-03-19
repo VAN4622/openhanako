@@ -46,7 +46,9 @@ export class PreferencesManager {
 
   /** 读取自学技能配置（全局，跨 agent） */
   getLearnSkills() {
-    return this.getPreferences().learn_skills || {};
+    const cfg = this.getPreferences().learn_skills;
+    if (!cfg) return { enabled: true, safety_review: true };
+    return cfg;
   }
 
   /** 合并写入自学技能配置 */
@@ -89,6 +91,35 @@ export class PreferencesManager {
   setThinkingLevel(level) {
     const prefs = this.getPreferences();
     prefs.thinking_level = level;
+    this.savePreferences(prefs);
+  }
+
+  /** 读取外部技能扫描路径 */
+  getExternalSkillPaths() {
+    return this.getPreferences().external_skill_paths || [];
+  }
+
+  /** 保存外部技能扫描路径 */
+  setExternalSkillPaths(paths) {
+    const prefs = this.getPreferences();
+    prefs.external_skill_paths = paths;
+    this.savePreferences(prefs);
+  }
+
+  /** 读取 OAuth 自定义模型 { provider: ["model-id", ...] } */
+  getOAuthCustomModels() {
+    return this.getPreferences().oauth_custom_models || {};
+  }
+
+  /** 设置某个 OAuth provider 的自定义模型列表 */
+  setOAuthCustomModels(provider, modelIds) {
+    const prefs = this.getPreferences();
+    if (!prefs.oauth_custom_models) prefs.oauth_custom_models = {};
+    if (modelIds.length === 0) {
+      delete prefs.oauth_custom_models[provider];
+    } else {
+      prefs.oauth_custom_models[provider] = modelIds;
+    }
     this.savePreferences(prefs);
   }
 

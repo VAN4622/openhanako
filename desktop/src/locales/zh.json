@@ -417,7 +417,18 @@
       "added": "已添加 {name}",
       "deleted": "已删除 {name}",
       "noModels": "暂无模型",
-      "resetModels": "重置模型"
+      "resetModels": "重置模型",
+      "apiType": "API 类型",
+      "verify": "验证",
+      "verifyConnection": "验证连接",
+      "verifySuccess": "验证通过",
+      "verifyFailed": "验证失败",
+      "setupHint": "输入 API Key 以启用此供应商",
+      "selectHint": "选择一个供应商查看详情",
+      "addCustom": "添加自定义供应商",
+      "noKey": "未配置",
+      "remove": "移除",
+      "deleteConfirm": "确定删除供应商 {name}？相关模型和收藏将一并清除。"
     },
     "oauth": {
       "title": "快速登录",
@@ -432,7 +443,9 @@
       "deviceHint": "在浏览器中输入此验证码并授权",
       "waiting": "等待授权中…",
       "clickToCopy": "点击复制",
-      "codeCopied": "验证码已复制"
+      "codeCopied": "验证码已复制",
+      "addModel": "添加模型",
+      "customModelPlaceholder": "输入模型 ID"
     },
     "api": {
       "title": "模型与接口",
@@ -599,7 +612,14 @@
       "dropzone": "拖入技能文件夹安装，或点击选择",
       "learnHint": "试着对助手说：帮我从 GitHub 上找一些安全并且有用的技能",
       "reloaded": "技能已刷新",
-      "reload": "刷新技能"
+      "reload": "刷新技能",
+      "compatTitle": "兼容技能",
+      "compatDesc": "自动发现其他 AI 工具安装的技能",
+      "compatNoSkills": "未发现外部技能",
+      "compatAddPath": "添加目录",
+      "compatRemove": "移除",
+      "compatAutoDiscovered": "自动发现",
+      "compatNotInstalled": "未安装"
     },
     "bridge": {
       "telegram": "Telegram",
@@ -745,6 +765,13 @@
   },
   "desk": {
     "title": "书桌",
+    "skills": "技能",
+    "cwdSkills": "项目技能",
+    "cwdSkillsEmpty": "当前文件夹没有项目技能",
+    "cwdSkillsHint": "在文件夹下创建 .agents/skills/ 目录即可",
+    "cwdSkillsDesc": "技能跟随工作空间",
+    "cwdSkillsDrop": "拖入文件夹或 .zip 安装技能",
+    "deleteSkill": "删除技能",
     "openInFinder": "在访达中打开",
     "jianLabel": "笺",
     "jianPlaceholder": "写点什么，告诉助手这个文件夹里面的文件该如何处理...",

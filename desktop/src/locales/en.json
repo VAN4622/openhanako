@@ -417,7 +417,18 @@
       "added": "Added {name}",
       "deleted": "Deleted {name}",
       "noModels": "No models yet",
-      "resetModels": "Reset Models"
+      "resetModels": "Reset Models",
+      "apiType": "API Type",
+      "verify": "Verify",
+      "verifyConnection": "Verify Connection",
+      "verifySuccess": "Connection verified",
+      "verifyFailed": "Verification failed",
+      "setupHint": "Enter API Key to activate this provider",
+      "selectHint": "Select a provider to view details",
+      "addCustom": "Add Custom Provider",
+      "noKey": "Not configured",
+      "remove": "Remove",
+      "deleteConfirm": "Delete provider {name}? Associated models and favorites will be removed."
     },
     "oauth": {
       "title": "Quick Login",
@@ -432,7 +443,9 @@
       "deviceHint": "Enter this code in the browser to authorize",
       "waiting": "Waiting for authorization…",
       "clickToCopy": "Click to copy",
-      "codeCopied": "Code copied"
+      "codeCopied": "Code copied",
+      "addModel": "Add Model",
+      "customModelPlaceholder": "Enter model ID"
     },
     "api": {
       "title": "Models & API",
@@ -599,7 +612,14 @@
       "dropzone": "Drop a skill folder to install, or click to browse",
       "learnHint": "Try asking your assistant: find me some safe and useful skills from GitHub",
       "reloaded": "Skills reloaded",
-      "reload": "Reload skills"
+      "reload": "Reload skills",
+      "compatTitle": "Compatible Skills",
+      "compatDesc": "Auto-discover skills installed by other AI tools",
+      "compatNoSkills": "No external skills found",
+      "compatAddPath": "Add directory",
+      "compatRemove": "Remove",
+      "compatAutoDiscovered": "Auto-discovered",
+      "compatNotInstalled": "Not installed"
     },
     "bridge": {
       "telegram": "Telegram",
@@ -745,6 +765,13 @@
   },
   "desk": {
     "title": "Desk",
+    "skills": "Skills",
+    "cwdSkills": "Project Skills",
+    "cwdSkillsEmpty": "No project skills in this folder",
+    "cwdSkillsHint": "Create a .agents/skills/ directory to get started",
+    "cwdSkillsDesc": "Skills follow workspace",
+    "cwdSkillsDrop": "Drop folder or .zip to install skills",
+    "deleteSkill": "Delete Skill",
     "openInFinder": "Open in Finder",
     "jianLabel": "Jian",
     "jianPlaceholder": "Write something to tell the assistant how to handle files in this folder...",

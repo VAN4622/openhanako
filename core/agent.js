@@ -538,6 +538,9 @@ export class Agent {
     const section = (title, content) => ["", "---", "", title, "", content];
 
     const parts = [
+      isZh
+        ? "你运行在 OpenHanako 平台上。项目主页：https://github.com/liliMozi/openhanako"
+        : "You are running on the OpenHanako platform. Project page: https://github.com/liliMozi/openhanako",
       ishiki,
       ...section(
         isZh ? "# 用户档案" : "# User Profile",

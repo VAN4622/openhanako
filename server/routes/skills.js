@@ -222,6 +222,41 @@ export default async function skillsRoute(app, { engine }) {
     }
   });
 
+  // ── 外部兼容技能路径 ──
+  app.get("/api/skills/external-paths", async (_req, reply) => {
+    try {
+      return engine.getExternalSkillPaths();
+    } catch (err) {
+      reply.code(500);
+      return { error: err.message };
+    }
+  });
+
+  app.put("/api/skills/external-paths", async (req, reply) => {
+    try {
+      const { paths } = req.body || {};
+      if (!Array.isArray(paths)) {
+        reply.code(400);
+        return { error: "paths must be an array" };
+      }
+      for (const p of paths) {
+        if (!path.isAbsolute(p)) {
+          reply.code(400);
+          return { error: `路径必须是绝对路径: ${p}` };
+        }
+        if (path.resolve(p) === path.resolve(engine.skillsDir)) {
+          reply.code(400);
+          return { error: "不能添加 Hanako 自身的技能目录" };
+        }
+      }
+      await engine.setExternalSkillPaths(paths);
+      return { ok: true };
+    } catch (err) {
+      reply.code(500);
+      return { error: err.message };
+    }
+  });
+
   // ── 删除技能 ──
   app.delete("/api/skills/:name", async (req, reply) => {
     try {
@@ -229,6 +264,14 @@ export default async function skillsRoute(app, { engine }) {
       if (!sanitizeSkillName(name)) {
         reply.code(400);
         return { error: "无效的技能名称" };
+      }
+
+      // 外部技能不可删除
+      const allSkills = engine.getAllSkills();
+      const target = allSkills.find(s => s.name === name);
+      if (target?.readonly) {
+        reply.code(403);
+        return { error: "外部兼容技能无法从此处删除" };
       }
 
       // 优先查用户技能目录，再查 agent 自学目录

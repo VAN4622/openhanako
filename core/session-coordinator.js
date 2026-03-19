@@ -274,7 +274,7 @@ export class SessionCoordinator {
   async closeAllSessions() {
     if (this._session) {
       const curSp = this._session.sessionManager?.getSessionFile?.();
-      if (curSp) this._d.getAgent()._memoryTicker?.notifySessionEnd(curSp);
+      if (curSp) this._d.getAgent()?._memoryTicker?.notifySessionEnd(curSp);
     }
     for (const [, entry] of this._sessions) {
       if (entry.session.isStreaming) {
@@ -466,15 +466,19 @@ export class SessionCoordinator {
       const modelId = opts.model ? null : agentPreferredModel;
       let resolvedModel = opts.model;
       if (!resolvedModel) {
-        if (!modelId) {
-          log.error(`[executeIsolated] agent "${targetAgent.agentName}" 未指定 models.chat`);
-          throw new Error(`executeIsolated: agent "${targetAgent.agentName}" 未指定 models.chat`);
+        if (modelId) {
+          resolvedModel = models.availableModels.find(m => m.id === modelId);
         }
-        resolvedModel = models.availableModels.find(m => m.id === modelId);
         if (!resolvedModel) {
-          const available = models.availableModels.map(m => `${m.provider}/${m.id}`).join(", ");
-          log.error(`[executeIsolated] 找不到模型 "${modelId}"。availableModels=[${available}]`);
-          throw new Error(`executeIsolated: 模型 "${modelId}" 不在可用列表中`);
+          // agent 未配 models.chat 或配置的模型不在可用列表：fallback 到当前默认模型
+          resolvedModel = models.defaultModel;
+        }
+        if (!resolvedModel) {
+          log.error(`[executeIsolated] agent "${targetAgent.agentName}" 未指定 models.chat，也没有可用的默认模型`);
+          throw new Error(`executeIsolated: agent "${targetAgent.agentName}" 无可用模型`);
+        }
+        if (modelId && resolvedModel.id !== modelId) {
+          log.log(`[executeIsolated] 模型 "${modelId}" 不可用，fallback → ${resolvedModel.id}`);
         }
       }
       const execModel = models.resolveExecutionModel(resolvedModel);

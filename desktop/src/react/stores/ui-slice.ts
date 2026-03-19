@@ -9,6 +9,7 @@ export interface UiSlice {
   welcomeVisible: boolean;
   currentTab: TabType;
   activePanel: ActivePanel;
+  panelClosing: boolean;
   setSidebarOpen: (open: boolean) => void;
   setSidebarAutoCollapsed: (collapsed: boolean) => void;
   setJianOpen: (open: boolean) => void;
@@ -21,6 +22,8 @@ export interface UiSlice {
   toggleJian: () => void;
 }
 
+let _panelCloseTimer: ReturnType<typeof setTimeout> | null = null;
+
 export const createUiSlice = (
   set: (partial: Partial<UiSlice> | ((s: UiSlice) => Partial<UiSlice>)) => void
 ): UiSlice => ({
@@ -32,6 +35,7 @@ export const createUiSlice = (
   welcomeVisible: true,
   currentTab: 'chat',
   activePanel: null,
+  panelClosing: false,
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setSidebarAutoCollapsed: (collapsed) => set({ sidebarAutoCollapsed: collapsed }),
   setJianOpen: (open) => set({ jianOpen: open }),
@@ -39,7 +43,21 @@ export const createUiSlice = (
   setPreviewOpen: (open) => set({ previewOpen: open }),
   setWelcomeVisible: (visible) => set({ welcomeVisible: visible }),
   setCurrentTab: (tab) => set({ currentTab: tab }),
-  setActivePanel: (panel) => set({ activePanel: panel }),
+  setActivePanel: (panel) => {
+    if (_panelCloseTimer) {
+      clearTimeout(_panelCloseTimer);
+      _panelCloseTimer = null;
+    }
+    if (panel === null) {
+      set({ panelClosing: true });
+      _panelCloseTimer = setTimeout(() => {
+        _panelCloseTimer = null;
+        set({ activePanel: null, panelClosing: false });
+      }, 80);
+    } else {
+      set({ activePanel: panel, panelClosing: false });
+    }
+  },
   toggleSidebar: () => set((s) => ({ sidebarOpen: !s.sidebarOpen })),
   toggleJian: () => set((s) => ({ jianOpen: !s.jianOpen })),
 });

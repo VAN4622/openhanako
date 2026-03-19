@@ -390,7 +390,7 @@ function handleServerMessage(msg: any): void {
 
     case 'thinking_end':
       _cr().sealThinking(state._thinkingBuf || '');
-      state._thinkingBuf = '';
+      state._thinkingBuf = undefined;
       break;
 
     case 'tool_start':
@@ -407,8 +407,17 @@ function handleServerMessage(msg: any): void {
       break;
 
     case 'turn_end':
+      // 安全兜底：如果 thinking 块未被 seal，先保留内容再结束
+      if (state._thinkingBuf != null) {
+        _cr().sealThinking(state._thinkingBuf || '');
+        state._thinkingBuf = undefined;
+      }
       _cr().finishAssistantTurn();
       _sb().loadSessions();
+      // 每轮结束后刷新 token 用量
+      if (state.ws?.readyState === WebSocket.OPEN) {
+        state.ws.send(JSON.stringify({ type: 'context_usage' }));
+      }
       break;
 
     case 'session_title':
@@ -522,6 +531,30 @@ function handleServerMessage(msg: any): void {
       }
       break;
     }
+
+    case 'compaction_start':
+      state._compacting = true;
+      _cr().showCompaction();
+      break;
+
+    case 'compaction_end':
+      state._compacting = false;
+      _cr().hideCompaction();
+      // 更新 token 用量
+      if (msg.tokens != null && msg.contextWindow != null) {
+        state.contextTokens = msg.tokens;
+        state.contextWindow = msg.contextWindow;
+        state.contextPercent = msg.percent;
+      }
+      break;
+
+    case 'context_usage':
+      if (msg.tokens != null && msg.contextWindow != null) {
+        state.contextTokens = msg.tokens;
+        state.contextWindow = msg.contextWindow;
+        state.contextPercent = msg.percent;
+      }
+      break;
 
     case 'error':
       showError(msg.message);

@@ -4,7 +4,99 @@
 import { getAllProviders } from "../../lib/memory/config-loader.js";
 import { buildProviderAuthHeaders } from "../../lib/llm/provider-client.js";
 
+function maskKey(key) {
+  if (!key || key.length < 8) return key ? "***" : "";
+  return key.slice(0, 4) + "..." + key.slice(-4);
+}
+
+// OAuth provider 白名单：只暴露合规可用的（其他 coding plan 会封号）
+const ALLOWED_OAUTH = new Set(["minimax", "openai-codex"]);
+
 export default async function providersRoute(app, { engine }) {
+
+  // ── Provider Summary ──
+
+  /**
+   * 统一概览：合并 providers.yaml + OAuth status + favorites + SDK 模型
+   * 前端新 ProvidersTab 的核心数据源
+   */
+  app.get("/api/providers/summary", async () => {
+    const providers = getAllProviders(engine.configPath);
+    const favorites = engine.readFavorites();
+    const favSet = new Set(favorites);
+
+    // OAuth provider 信息
+    const oauthProviders = engine.authStorage?.getOAuthProviders?.() || [];
+    const oauthMap = new Map();
+    for (const p of oauthProviders) {
+      const cred = engine.authStorage.get(p.id);
+      oauthMap.set(p.id, { name: p.name, loggedIn: cred?.type === "oauth" });
+    }
+
+    // OAuth 自定义模型
+    const oauthCustom = engine.preferences.getOAuthCustomModels();
+
+    // SDK 可用模型（含 OAuth 注入的）
+    const sdkModels = engine.availableModels || [];
+    const sdkByProvider = new Map();
+    for (const m of sdkModels) {
+      if (!sdkByProvider.has(m.provider)) sdkByProvider.set(m.provider, []);
+      sdkByProvider.get(m.provider).push(m.id);
+    }
+
+    const result = {};
+
+    // 先处理 providers.yaml 中的 provider（保持顺序）
+    for (const [name, p] of Object.entries(providers)) {
+      const isOAuth = oauthMap.has(name);
+      const oauthInfo = oauthMap.get(name);
+      const sdkIds = sdkByProvider.get(name) || [];
+      // 合并：providers.yaml models + SDK 发现的模型
+      const allModels = [...new Set([...(p.models || []), ...sdkIds])];
+      const customModels = oauthCustom[name] || [];
+
+      result[name] = {
+        type: isOAuth ? "oauth" : "api-key",
+        display_name: oauthInfo?.name || name,
+        base_url: p.base_url || "",
+        api: p.api || "",
+        api_key_masked: p.api_key ? maskKey(p.api_key) : "",
+        models: allModels,
+        custom_models: customModels,
+        has_credentials: !!(p.api_key || (isOAuth && oauthInfo?.loggedIn)),
+        logged_in: isOAuth ? !!oauthInfo?.loggedIn : undefined,
+        supports_oauth: isOAuth && ALLOWED_OAUTH.has(name),
+        can_delete: !isOAuth || Object.prototype.hasOwnProperty.call(providers, name),
+      };
+    }
+
+    // 追加 OAuth-only provider（有 auth.json 但没在 providers.yaml 里）
+    // 只暴露白名单内的，其他 coding plan 会封号
+    for (const [id, info] of oauthMap) {
+      if (result[id]) continue;
+      if (!ALLOWED_OAUTH.has(id)) continue;
+      const sdkIds = sdkByProvider.get(id) || [];
+      const customModels = oauthCustom[id] || [];
+      result[id] = {
+        type: "oauth",
+        display_name: info.name || id,
+        base_url: "",
+        api: "",
+        api_key_masked: "",
+        models: sdkIds,
+        custom_models: customModels,
+        has_credentials: !!info.loggedIn,
+        logged_in: !!info.loggedIn,
+        supports_oauth: true,
+        can_delete: false,
+      };
+    }
+
+    return { providers: result, favorites };
+  });
+
+  // ── Fetch / Test ──
+
   function normalizeRegistryModels(models) {
     return models.map((model) => ({
       id: model.id,

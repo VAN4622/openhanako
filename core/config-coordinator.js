@@ -332,15 +332,22 @@ export class ConfigCoordinator {
       this._d.getSkills().syncAgentSkills(agent);
     }
 
-    if (partial.desk && "heartbeat_enabled" in partial.desk) {
-      const hb = this._d.getHub()?.scheduler?.heartbeat;
-      if (hb) {
-        if (partial.desk.heartbeat_enabled === false) {
-          this._d.emitDevLog("[heartbeat] 巡检已关闭");
-          await hb.stop();
-        } else {
-          this._d.emitDevLog("[heartbeat] 巡检已开启");
-          hb.start();
+    if (partial.desk) {
+      const scheduler = this._d.getHub()?.scheduler;
+      if ("heartbeat_interval" in partial.desk && scheduler) {
+        // 间隔变更：需要完整重建 heartbeat（INTERVAL 在创建时固化）
+        this._d.emitDevLog(`[heartbeat] 巡检间隔已更新: ${partial.desk.heartbeat_interval} 分钟`);
+        await scheduler.reloadHeartbeat();
+      } else if ("heartbeat_enabled" in partial.desk) {
+        const hb = scheduler?.heartbeat;
+        if (hb) {
+          if (partial.desk.heartbeat_enabled === false) {
+            this._d.emitDevLog("[heartbeat] 巡检已关闭");
+            await hb.stop();
+          } else {
+            this._d.emitDevLog("[heartbeat] 巡检已开启");
+            hb.start();
+          }
         }
       }
     }

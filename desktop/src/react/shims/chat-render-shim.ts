@@ -589,6 +589,33 @@ function crRenderHistoryToolGroup(
   container.appendChild(wrapper);
 }
 
+// ── Compaction 提示 ──
+
+let _compactionEl: HTMLElement | null = null;
+
+function crShowCompaction(): void {
+  if (_compactionEl) return;
+  const yuan = (crState().agentYuan as string) || 'hanako';
+  const el = document.createElement('div');
+  el.className = 'compaction-notice';
+  el.dataset.yuan = yuan;
+
+  // SVG: minimize/compress icon (feather style)
+  el.innerHTML = `<svg class="compaction-notice-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg><span class="compaction-notice-text">正在压缩上下文，以得到更持久的会话，稍候片刻</span><span class="compaction-notice-dots"><span></span><span></span><span></span></span>`;
+
+  crCtx!.messagesEl.appendChild(el);
+  _compactionEl = el;
+  crCtx!.scrollToBottom();
+}
+
+function crHideCompaction(): void {
+  if (!_compactionEl) return;
+  _compactionEl.classList.add('fade-out');
+  const el = _compactionEl;
+  _compactionEl = null;
+  setTimeout(() => el.remove(), 300);
+}
+
 // ── Xing 反省卡片 ──
 
 function crShowXingLoading(title: string): void {
@@ -688,6 +715,8 @@ export function setupChatRenderShim(modules: Record<string, unknown>): void {
     renderHistoryToolGroup: crRenderHistoryToolGroup,
     showXingLoading: crShowXingLoading,
     sealXingCard: crSealXingCard,
+    showCompaction: crShowCompaction,
+    hideCompaction: crHideCompaction,
     initChatRender: (injected: ChatRenderCtx) => { crCtx = injected; },
   };
 }

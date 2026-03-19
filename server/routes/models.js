@@ -3,15 +3,27 @@
  */
 import { supportsXhigh } from "@mariozechner/pi-ai";
 import { t } from "../i18n.js";
+import { createRequire } from "module";
+const _require = createRequire(import.meta.url);
+const _knownModels = _require("../../lib/known-models.json");
+
+/** 查询模型显示名：overrides > SDK name > known-models > id */
+function resolveModelName(id, sdkName, overrides) {
+  if (overrides?.[id]?.displayName) return overrides[id].displayName;
+  if (sdkName && sdkName !== id) return sdkName;
+  if (_knownModels[id]?.name) return _knownModels[id].name;
+  return sdkName || id;
+}
 
 export default async function modelsRoute(app, { engine }) {
 
   // 列出可用模型
   app.get("/api/models", async (req, reply) => {
     try {
+      const overrides = engine.config?.models?.overrides;
       const models = engine.availableModels.map(m => ({
         id: m.id,
-        name: m.name || m.id,
+        name: resolveModelName(m.id, m.name, overrides),
         provider: m.provider,
         isCurrent: m.id === engine.currentModel?.id,
       }));
@@ -28,11 +40,12 @@ export default async function modelsRoute(app, { engine }) {
       const favorites = engine.readFavorites();
       const available = engine.availableModels;
 
+      const overrides = engine.config?.models?.overrides;
       const result = favorites.map(id => {
         const m = available.find(am => am.id === id);
         return {
           id,
-          name: m?.name || id,
+          name: resolveModelName(id, m?.name, overrides),
           provider: m?.provider || "",
           isCurrent: id === engine.currentModel?.id,
           reasoning: m ? !!m.reasoning : false,

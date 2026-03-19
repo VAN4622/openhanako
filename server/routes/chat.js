@@ -331,6 +331,11 @@ export default async function chatRoute(app, { engine, hub }) {
       broadcast({ type: "dm_new_message", from: event.from, to: event.to });
     } else if (event.type === "turn_end") {
       if (!ss) return;
+      // 关闭结构化 thinking（如有）——必须在 flush 之前，否则前端收不到 thinking_end
+      if (ss.isThinking) {
+        ss.isThinking = false;
+        emitStreamEvent(sessionPath, ss, { type: "thinking_end" });
+      }
       // flush 顺序：ThinkTag → Mood → Xing（和 feed 顺序一致）
       // flush 内部的 mood → xing 管线（thinkTag flush 和 mood flush 共用）
       const feedMoodPipeline = (text) => {
@@ -402,7 +407,6 @@ export default async function chatRoute(app, { engine, hub }) {
 
       emitStreamEvent(sessionPath, ss, { type: "turn_end" });
       finishSessionStream(ss);
-      ss.isThinking = false;
       ss.thinkTagParser.reset();
       ss.moodParser.reset();
       ss.xingParser.reset();
@@ -410,6 +414,18 @@ export default async function chatRoute(app, { engine, hub }) {
       if (isActive) {
         debugLog()?.log("ws", "assistant reply done");
         maybeGenerateFirstTurnTitle(sessionPath, ss);
+      }
+    } else if (event.type === "auto_compaction_start") {
+      if (isActive) broadcast({ type: "compaction_start" });
+    } else if (event.type === "auto_compaction_end") {
+      if (isActive) {
+        const usage = engine.session?.getContextUsage?.();
+        broadcast({
+          type: "compaction_end",
+          tokens: usage?.tokens ?? null,
+          contextWindow: usage?.contextWindow ?? null,
+          percent: usage?.percent ?? null,
+        });
       }
     }
   });
@@ -480,6 +496,55 @@ export default async function chatRoute(app, { engine, hub }) {
             isStreaming: false,
             events: [],
           });
+        }
+        return;
+      }
+
+      if (msg.type === "context_usage") {
+        const usage = engine.session?.getContextUsage?.();
+        wsSend(ws, {
+          type: "context_usage",
+          tokens: usage?.tokens ?? null,
+          contextWindow: usage?.contextWindow ?? null,
+          percent: usage?.percent ?? null,
+        });
+        return;
+      }
+
+      if (msg.type === "compact") {
+        const session = engine.session;
+        if (!session) {
+          wsSend(ws, { type: "error", message: "没有活跃的 session" });
+          return;
+        }
+        if (session.isCompacting) {
+          wsSend(ws, { type: "error", message: "正在压缩中" });
+          return;
+        }
+        // streaming 时不允许手动压缩，避免与 prompt 并发
+        if (engine.isStreaming) {
+          wsSend(ws, { type: "error", message: "请等待回复结束后再压缩" });
+          return;
+        }
+        broadcast({ type: "compaction_start" });
+        try {
+          await session.compact();
+          const usage = session.getContextUsage?.();
+          broadcast({
+            type: "compaction_end",
+            tokens: usage?.tokens ?? null,
+            contextWindow: usage?.contextWindow ?? null,
+            percent: usage?.percent ?? null,
+          });
+        } catch (err) {
+          // Already compacted / Nothing to compact 不算错误
+          const msg = err.message || "";
+          if (msg.includes("Already compacted") || msg.includes("Nothing to compact")) {
+            broadcast({ type: "compaction_end" });
+          } else {
+            broadcast({ type: "compaction_end" });
+            wsSend(ws, { type: "error", message: `压缩失败: ${msg}` });
+          }
         }
         return;
       }
