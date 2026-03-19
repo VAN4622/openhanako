@@ -19,6 +19,11 @@ import {
 
 const log = createModuleLogger("config");
 
+function looksLikeWindowsPath(value) {
+  return typeof value === "string"
+    && (/^[A-Za-z]:[\\/]/.test(value) || /^\\\\/.test(value));
+}
+
 /** Plan Mode / Bridge 只读工具名白名单 */
 export const READ_ONLY_BUILTIN_TOOLS = ["read", "grep", "find", "ls"];
 
@@ -64,13 +69,20 @@ export class ConfigCoordinator {
 
   setHomeFolder(folder) {
     const prefs = this._prefs();
-    if (folder) {
-      prefs.home_folder = folder;
+    const normalized = typeof folder === "string" ? folder.trim() : folder;
+    if (normalized && process.platform !== "win32" && looksLikeWindowsPath(normalized)) {
+      delete prefs.home_folder;
+      this._savePrefs(prefs);
+      log.warn(`setHomeFolder ignored incompatible path on ${process.platform}: ${normalized}`);
+      return;
+    }
+    if (normalized) {
+      prefs.home_folder = normalized;
     } else {
       delete prefs.home_folder;
     }
     this._savePrefs(prefs);
-    log.log(`setHomeFolder: ${folder || "(cleared)"}`);
+    log.log(`setHomeFolder: ${normalized || "(cleared)"}`);
   }
 
   // ── Shared Models ──

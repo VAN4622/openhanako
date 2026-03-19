@@ -11,6 +11,7 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaUrl } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
+import { showToast } from '../utils/toast';
 import type { Agent } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -62,6 +63,7 @@ function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
   const selectedFolder = useStore(s => s.selectedFolder);
   const cwdHistory = useStore(s => s.cwdHistory);
   const pendingNewSession = useStore(s => s.pendingNewSession);
+  const serverMode = useStore(s => s.serverMode);
 
   // Toggle #welcome hidden class based on welcomeVisible
   useEffect(() => {
@@ -122,6 +124,7 @@ function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
         selectedFolder={selectedFolder}
         cwdHistory={cwdHistory}
         pendingNewSession={pendingNewSession}
+        serverMode={serverMode}
       />
       <MemoryToggle enabled={memoryEnabled} t={t} />
     </>
@@ -226,14 +229,16 @@ function AgentChip({ agent, isSelected, onClick }: {
 
 // ── Folder Picker ──
 
-function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession }: {
+function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession, serverMode }: {
   selectedFolder: string | null;
   cwdHistory: string[];
   pendingNewSession: boolean;
+  serverMode: string | null;
 }) {
   const { t } = useI18n();
   const [showHistory, setShowHistory] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
+  const remoteMode = serverMode === 'remote';
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -252,10 +257,14 @@ function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession }: {
 
   const handleBrowse = useCallback(async () => {
     setShowHistory(false);
+    if (remoteMode) {
+      showToast('远程网关模式下不能选择本机文件夹，请在设置中填写服务器路径。', 'success', 5000);
+      return;
+    }
     const folder = await (window as any).platform?.selectFolder?.();
     if (!folder) return;
     applyFolderAction(folder, pendingNewSession);
-  }, [pendingNewSession]);
+  }, [pendingNewSession, remoteMode]);
 
   const handleButtonClick = useCallback(() => {
     if (cwdHistory.length > 0) {
@@ -270,7 +279,7 @@ function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession }: {
     applyFolderAction(folder, pendingNewSession);
   }, [pendingNewSession]);
 
-  const folderName = selectedFolder ? selectedFolder.split('/').pop() || selectedFolder : null;
+  const folderName = selectedFolder ? selectedFolder.split(/[\\/]/).pop() || selectedFolder : null;
   const label = folderName
     ? `${t('input.workspace')}${folderName}`
     : t('input.selectWorkspace');
@@ -301,22 +310,24 @@ function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession }: {
           selectedFolder={selectedFolder}
           onSelect={handleSelectHistory}
           onBrowse={handleBrowse}
+          showBrowse={!remoteMode}
         />
       )}
     </div>
   );
 }
 
-function FolderHistory({ cwdHistory, selectedFolder, onSelect, onBrowse }: {
+function FolderHistory({ cwdHistory, selectedFolder, onSelect, onBrowse, showBrowse }: {
   cwdHistory: string[];
   selectedFolder: string | null;
   onSelect: (folder: string) => void;
   onBrowse: () => void;
+  showBrowse: boolean;
 }) {
   return (
     <div className="folder-history">
       {cwdHistory.map(p => {
-        const name = p.split('/').pop() || p;
+        const name = p.split(/[\\/]/).pop() || p;
         const isActive = p === selectedFolder;
         return (
           <div
@@ -334,17 +345,21 @@ function FolderHistory({ cwdHistory, selectedFolder, onSelect, onBrowse }: {
           </div>
         );
       })}
-      <div className="folder-history-divider" />
-      <div className="folder-history-browse" onClick={(e) => { e.stopPropagation(); onBrowse(); }}>
-        <span className="folder-history-item-icon">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
-            <line x1="12" y1="11" x2="12" y2="17"></line>
-            <line x1="9" y1="14" x2="15" y2="14"></line>
-          </svg>
-        </span>
-        <span>{(window.t ?? ((p: string) => p))('input.selectFolder')}...</span>
-      </div>
+      {showBrowse && (
+        <>
+          <div className="folder-history-divider" />
+          <div className="folder-history-browse" onClick={(e) => { e.stopPropagation(); onBrowse(); }}>
+            <span className="folder-history-item-icon">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                <line x1="12" y1="11" x2="12" y2="17"></line>
+                <line x1="9" y1="14" x2="15" y2="14"></line>
+              </svg>
+            </span>
+            <span>{(window.t ?? ((p: string) => p))('input.selectFolder')}...</span>
+          </div>
+        </>
+      )}
     </div>
   );
 }
