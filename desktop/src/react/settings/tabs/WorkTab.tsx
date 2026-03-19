@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { useSettingsStore } from '../store';
 import { t, autoSaveConfig } from '../helpers';
+import { hanaFetch as settingsHanaFetch } from '../api';
 import { Toggle } from '../widgets/Toggle';
 import { SelectWidget } from '../widgets/SelectWidget';
+import { RemoteDirectoryPicker, type RemoteDirectoryListing } from '../../components/RemoteDirectoryPicker';
 
 const platform = (window as any).platform;
 
@@ -16,6 +18,7 @@ export function WorkTab() {
   const [gatewayBaseUrl, setGatewayBaseUrl] = useState('');
   const [gatewayToken, setGatewayToken] = useState('');
   const [gatewaySaving, setGatewaySaving] = useState(false);
+  const [showRemotePicker, setShowRemotePicker] = useState(false);
 
   const locale = settingsConfig?.locale || 'zh-CN';
   const zh = locale.startsWith('zh');
@@ -42,14 +45,7 @@ export function WorkTab() {
 
   const pickHomeFolder = async () => {
     if (remoteWorkspaceMode) {
-      showToast(
-        tx(
-          'settings.work.remoteHomeFolderHint',
-          '远程网关模式下请直接填写服务器上的目录路径。',
-          'In remote gateway mode, enter a server-side workspace path directly.',
-        ),
-        'success',
-      );
+      setShowRemotePicker(true);
       return;
     }
     const folder = await platform?.selectFolder?.();
@@ -83,6 +79,12 @@ export function WorkTab() {
       useSettingsStore.setState({ homeFolder: homeFolder.trim() || null });
     }
     await autoSaveConfig({ desk: deskPatch });
+  };
+
+  const loadRemoteDirectories = async (targetPath?: string | null): Promise<RemoteDirectoryListing> => {
+    const qs = targetPath ? `?path=${encodeURIComponent(targetPath)}` : '';
+    const res = await settingsHanaFetch(`/api/fs/directories${qs}`);
+    return res.json();
   };
 
   const saveGateway = async () => {
@@ -144,13 +146,11 @@ export function WorkTab() {
             onClick={remoteWorkspaceMode ? undefined : pickHomeFolder}
             onChange={remoteWorkspaceMode ? (e) => setHomeFolder(e.target.value) : undefined}
           />
-          {!remoteWorkspaceMode && (
-            <button className="settings-folder-browse" onClick={pickHomeFolder}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-              </svg>
-            </button>
-          )}
+          <button className="settings-folder-browse" onClick={pickHomeFolder}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+            </svg>
+          </button>
           {homeFolder && (
             <button
               className="settings-folder-clear"
@@ -305,6 +305,25 @@ export function WorkTab() {
           {t('settings.save')}
         </button>
       </div>
+
+      <RemoteDirectoryPicker
+        open={showRemotePicker}
+        initialPath={homeFolder}
+        title={tx('settings.work.remotePickerTitle', '选择远程工作目录', 'Choose Remote Workspace')}
+        description={tx(
+          'settings.work.remotePickerDesc',
+          '浏览远程 Hanako 服务器上的目录，并把它设为默认工作目录。',
+          'Browse directories on the remote Hanako server and set one as the default workspace.',
+        )}
+        confirmLabel={tx('settings.work.remotePickerConfirm', '使用当前目录', 'Use Current Directory')}
+        loadDirectories={loadRemoteDirectories}
+        onClose={() => setShowRemotePicker(false)}
+        onPick={(path) => {
+          setHomeFolder(path);
+          useSettingsStore.setState({ homeFolder: path });
+          setShowRemotePicker(false);
+        }}
+      />
     </div>
   );
 }

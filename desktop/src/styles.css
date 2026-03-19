@@ -9734,3 +9734,124 @@ body.resizing .preview-panel-inner {
 .hana-warning-confirm:hover {
     opacity: 0.85;
 }
+
+.remote-dir-picker {
+    width: 560px;
+    max-width: min(92vw, 560px);
+}
+
+.remote-dir-picker-roots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 1rem 0 0.9rem;
+}
+
+.remote-dir-root-btn {
+    border: 1px solid var(--overlay-light);
+    border-radius: 999px;
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: 0.78rem;
+    padding: 0.32rem 0.72rem;
+    cursor: pointer;
+    transition: all 0.16s ease;
+}
+
+.remote-dir-root-btn:hover,
+.remote-dir-root-btn.active {
+    background: var(--overlay-subtle);
+    color: var(--text);
+}
+
+.remote-dir-picker-toolbar {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 0.9rem;
+}
+
+.remote-dir-current-path {
+    flex: 1;
+    display: block;
+    padding: 0.55rem 0.7rem;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    line-height: 1.45;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.remote-dir-picker-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 220px;
+    max-height: 360px;
+    overflow-y: auto;
+    margin-bottom: 1rem;
+    padding-right: 4px;
+}
+
+.remote-dir-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0.35rem;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+.remote-dir-entry-open {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+    min-width: 0;
+}
+
+.remote-dir-entry-open:hover .remote-dir-entry-name {
+    color: var(--accent);
+}
+
+.remote-dir-entry-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.remote-dir-entry-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.remote-dir-placeholder,
+.remote-dir-error {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    padding: 1rem;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.6;
+}
+
+.remote-dir-error {
+    color: var(--danger);
+}

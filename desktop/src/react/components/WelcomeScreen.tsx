@@ -9,9 +9,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
+import { hanaFetch } from '../hooks/use-hana-fetch';
 import { hanaUrl } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
-import { showToast } from '../utils/toast';
+import { RemoteDirectoryPicker, type RemoteDirectoryListing } from './RemoteDirectoryPicker';
 import type { Agent } from '../types';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -51,7 +52,8 @@ function randomWelcome(agentName: string, yuan: string): string {
 // ── 内部组件 ──
 
 function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const zh = locale.startsWith('zh');
   const welcomeVisible = useStore(s => s.welcomeVisible);
   const agents = useStore(s => s.agents);
   const agentName = useStore(s => s.agentName);
@@ -235,8 +237,10 @@ function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession, serverMod
   pendingNewSession: boolean;
   serverMode: string | null;
 }) {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
+  const zh = locale.startsWith('zh');
   const [showHistory, setShowHistory] = useState(false);
+  const [showRemotePicker, setShowRemotePicker] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const remoteMode = serverMode === 'remote';
 
@@ -258,7 +262,7 @@ function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession, serverMod
   const handleBrowse = useCallback(async () => {
     setShowHistory(false);
     if (remoteMode) {
-      showToast('远程网关模式下不能选择本机文件夹，请在设置中填写服务器路径。', 'success', 5000);
+      setShowRemotePicker(true);
       return;
     }
     const folder = await (window as any).platform?.selectFolder?.();
@@ -310,9 +314,30 @@ function FolderPicker({ selectedFolder, cwdHistory, pendingNewSession, serverMod
           selectedFolder={selectedFolder}
           onSelect={handleSelectHistory}
           onBrowse={handleBrowse}
-          showBrowse={!remoteMode}
+          showBrowse
         />
       )}
+      <RemoteDirectoryPicker
+        open={showRemotePicker}
+        initialPath={selectedFolder}
+        title={t('input.selectWorkspace')}
+        description={remoteMode
+          ? (zh
+            ? '选择远程 Hanako 服务器上的目录，作为这次新会话的工作目录。'
+            : 'Choose a directory on the remote Hanako server for this new session.')
+          : 'Choose a folder for the current session.'}
+        confirmLabel={zh ? '使用当前目录' : 'Use Current Directory'}
+        loadDirectories={async (targetPath?: string | null): Promise<RemoteDirectoryListing> => {
+          const qs = targetPath ? `?path=${encodeURIComponent(targetPath)}` : '';
+          const res = await hanaFetch(`/api/fs/directories${qs}`);
+          return res.json();
+        }}
+        onClose={() => setShowRemotePicker(false)}
+        onPick={(folder) => {
+          applyFolderAction(folder, pendingNewSession);
+          setShowRemotePicker(false);
+        }}
+      />
     </div>
   );
 }

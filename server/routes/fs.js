@@ -12,6 +12,34 @@ function isSafePath(filePath, allowedRoots) {
   );
 }
 
+function uniqueDirectoryRoots(candidates) {
+  const seen = new Set();
+  const roots = [];
+  for (const candidate of candidates) {
+    if (!candidate?.path) continue;
+    try {
+      const resolved = path.resolve(candidate.path);
+      const stat = fs.statSync(resolved);
+      if (!stat.isDirectory() || seen.has(resolved)) continue;
+      seen.add(resolved);
+      roots.push({ id: candidate.id, path: resolved });
+    } catch {
+      // Ignore missing or inaccessible directories.
+    }
+  }
+  return roots;
+}
+
+function listDirectoriesOnly(dirPath) {
+  return fs.readdirSync(dirPath, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith("."))
+    .map((entry) => ({
+      name: entry.name,
+      path: path.join(dirPath, entry.name),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
 export default async function fsRoute(app, { engine }) {
   const hanakoHome = path.resolve(engine.hanakoHome);
 
@@ -23,6 +51,52 @@ export default async function fsRoute(app, { engine }) {
     roots.push(path.resolve(path.join(os.tmpdir(), ".hanako-uploads")));
     return roots;
   }
+
+  function getDirectoryRoots() {
+    return uniqueDirectoryRoots([
+      { id: "workspace", path: engine.getHomeFolder?.() || engine.homeCwd },
+      { id: "home", path: os.homedir() },
+      { id: "current", path: engine.cwd },
+    ]);
+  }
+
+  app.get("/api/fs/directories", async (req, reply) => {
+    const roots = getDirectoryRoots();
+    if (roots.length === 0) {
+      return reply.code(500).send({ error: "no directory roots available" });
+    }
+
+    const requestedPath = typeof req.query.path === "string" ? req.query.path.trim() : "";
+    const targetPath = requestedPath ? path.resolve(requestedPath) : roots[0].path;
+
+    let stat;
+    try {
+      stat = fs.statSync(targetPath);
+    } catch {
+      return reply.code(404).send({ error: "directory not found" });
+    }
+
+    if (!stat.isDirectory()) {
+      return reply.code(400).send({ error: "path is not a directory" });
+    }
+
+    const allowedRoots = roots.map((root) => root.path);
+    if (!isSafePath(targetPath, allowedRoots)) {
+      return reply.code(403).send({ error: "path not allowed" });
+    }
+
+    const parentCandidate = path.dirname(targetPath);
+    const parentPath = parentCandidate !== targetPath && isSafePath(parentCandidate, allowedRoots)
+      ? parentCandidate
+      : null;
+
+    return {
+      roots,
+      currentPath: targetPath,
+      parentPath,
+      directories: listDirectoriesOnly(targetPath),
+    };
+  });
 
   app.get("/api/fs/read", async (req, reply) => {
     const filePath = req.query.path;
