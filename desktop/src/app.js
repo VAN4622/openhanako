@@ -106,13 +106,16 @@ function getToolLabel(name, phase) {
 
 /** 构建带认证 token 的 URL */
 function hanaUrl(path) {
+  const baseUrl = state.serverBaseUrl || (state.serverPort ? `http://127.0.0.1:${state.serverPort}` : "");
+  if (!baseUrl) return path;
   const sep = path.includes("?") ? "&" : "?";
   const tokenParam = state.serverToken ? `${sep}token=${state.serverToken}` : "";
-  return `http://127.0.0.1:${state.serverPort}${path}${tokenParam}`;
+  return `${baseUrl}${path}${tokenParam}`;
 }
 
 /** 带认证的 fetch 封装（30s 超时 + res.ok 校验） */
 async function hanaFetch(path, opts = {}) {
+  const baseUrl = state.serverBaseUrl || (state.serverPort ? `http://127.0.0.1:${state.serverPort}` : "");
   const headers = { ...opts.headers };
   if (state.serverToken) {
     headers["Authorization"] = `Bearer ${state.serverToken}`;
@@ -121,7 +124,7 @@ async function hanaFetch(path, opts = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const res = await fetch(`http://127.0.0.1:${state.serverPort}${path}`, {
+    const res = await fetch(`${baseUrl}${path}`, {
       ...fetchOpts, headers, signal: controller.signal,
     });
     if (!res.ok) throw new Error(`hanaFetch ${path}: ${res.status} ${res.statusText}`);
@@ -135,7 +138,7 @@ async function hanaFetch(path, opts = {}) {
  * 前端日志上报：POST 到 server 写入持久化日志文件
  */
 window.__hanaLog = function (level, module, message) {
-  if (!state.serverPort) return;
+  if (!state.serverBaseUrl) return;
   hanaFetch("/api/log", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -162,7 +165,9 @@ const LOCAL_ONLY_KEYS = new Set([
 
 const _stateLocal = {
   serverPort: null,
+  serverBaseUrl: null,
   serverToken: null,
+  serverMode: null,
   ws: null,
   connected: false,
   isStreaming: false,
@@ -343,8 +348,10 @@ function initModules() {
 // ── 初始化 ──
 async function init() {
   state.serverPort = await platform.getServerPort();
+  state.serverBaseUrl = await (platform.getServerBaseUrl?.() || Promise.resolve(state.serverPort ? `http://127.0.0.1:${state.serverPort}` : ""));
   state.serverToken = await platform.getServerToken();
-  if (!state.serverPort) {
+  state.serverMode = await (platform.getServerMode?.() || Promise.resolve("local"));
+  if (!state.serverBaseUrl) {
     _ui().setStatus(t("status.serverNotReady"), false);
     platform.appReady();
     return;

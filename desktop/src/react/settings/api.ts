@@ -3,21 +3,20 @@
  * 从 settings store 读 port/token，独立于主窗口
  */
 import { useSettingsStore } from './store';
+import { buildHanaUrl, joinServerUrl } from '../utils/server-url';
 
 const DEFAULT_TIMEOUT = 30_000;
 
 export function hanaUrl(path: string): string {
-  const { serverPort, serverToken } = useSettingsStore.getState();
-  const sep = path.includes('?') ? '&' : '?';
-  const tokenParam = serverToken ? `${sep}token=${serverToken}` : '';
-  return `http://127.0.0.1:${serverPort}${path}${tokenParam}`;
+  const { serverBaseUrl, serverToken } = useSettingsStore.getState();
+  return buildHanaUrl(serverBaseUrl, serverToken, path);
 }
 
 export async function hanaFetch(
   path: string,
   opts: RequestInit & { timeout?: number } = {},
 ): Promise<Response> {
-  const { serverPort, serverToken } = useSettingsStore.getState();
+  const { serverBaseUrl, serverToken } = useSettingsStore.getState();
   const headers: Record<string, string> = { ...(opts.headers as Record<string, string>) };
   if (serverToken) {
     headers['Authorization'] = `Bearer ${serverToken}`;
@@ -28,7 +27,7 @@ export async function hanaFetch(
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const res = await fetch(`http://127.0.0.1:${serverPort}${path}`, {
+    const res = await fetch(joinServerUrl(serverBaseUrl, path), {
       ...fetchOpts,
       headers,
       signal: controller.signal,

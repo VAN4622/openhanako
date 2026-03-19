@@ -2,15 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useSettingsStore } from '../store';
 import { t, autoSaveConfig } from '../helpers';
 import { Toggle } from '../widgets/Toggle';
+import { SelectWidget } from '../widgets/SelectWidget';
 
 const platform = (window as any).platform;
 
 export function WorkTab() {
-  const { settingsConfig, showToast } = useSettingsStore();
+  const { settingsConfig, showToast, gatewayConfig, serverMode, serverBaseUrl } = useSettingsStore();
   const [homeFolder, setHomeFolder] = useState('');
   const [hbEnabled, setHbEnabled] = useState(true);
   const [hbInterval, setHbInterval] = useState(17);
   const [cronAutoApprove, setCronAutoApprove] = useState(true);
+  const [gatewayMode, setGatewayMode] = useState<'local' | 'remote'>('local');
+  const [gatewayBaseUrl, setGatewayBaseUrl] = useState('');
+  const [gatewayToken, setGatewayToken] = useState('');
+  const [gatewaySaving, setGatewaySaving] = useState(false);
+
+  const locale = settingsConfig?.locale || 'zh-CN';
+  const zh = locale.startsWith('zh');
+  const tx = (key: string, zhText: string, enText: string) => {
+    const value = t(key);
+    return value === key ? (zh ? zhText : enText) : value;
+  };
 
   useEffect(() => {
     if (settingsConfig) {
@@ -20,6 +32,12 @@ export function WorkTab() {
       setCronAutoApprove(settingsConfig.desk?.cron_auto_approve !== false);
     }
   }, [settingsConfig]);
+
+  useEffect(() => {
+    setGatewayMode(gatewayConfig.mode || 'local');
+    setGatewayBaseUrl(gatewayConfig.baseUrl || '');
+    setGatewayToken(gatewayConfig.token || '');
+  }, [gatewayConfig]);
 
   const pickHomeFolder = async () => {
     const folder = await platform?.selectFolder?.();
@@ -48,6 +66,41 @@ export function WorkTab() {
   const saveWork = async () => {
     const interval = Math.max(1, Math.min(120, hbInterval));
     await autoSaveConfig({ desk: { heartbeat_interval: interval } });
+  };
+
+  const saveGateway = async () => {
+    setGatewaySaving(true);
+    try {
+      const nextConfig = {
+        mode: gatewayMode,
+        baseUrl: gatewayBaseUrl.trim(),
+        token: gatewayToken.trim(),
+      };
+      if (gatewayMode === 'remote') {
+        await platform?.verifyGatewayConfig?.(nextConfig);
+      }
+      const saved = await platform?.saveGatewayConfig?.(nextConfig);
+      useSettingsStore.setState({ gatewayConfig: saved || nextConfig });
+      showToast(
+        tx(
+          'settings.gateway.saved',
+          '远程网关配置已保存，重启应用后生效',
+          'Gateway settings saved. Restart the app to apply them.',
+        ),
+        'success',
+      );
+    } catch (err: any) {
+      showToast(
+        tx(
+          'settings.gateway.saveFailed',
+          '远程网关保存失败',
+          'Failed to save gateway settings',
+        ) + `: ${err.message}`,
+        'error',
+      );
+    } finally {
+      setGatewaySaving(false);
+    }
   };
 
   return (
@@ -128,6 +181,87 @@ export function WorkTab() {
               onChange={toggleCronAutoApprove}
             />
           </div>
+        </div>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">
+          {tx('settings.gateway.title', '远程网关', 'Remote Gateway')}
+        </h2>
+        <p className="settings-desc settings-desc-compact">
+          {tx(
+            'settings.gateway.desc',
+            '让当前桌面客户端连接到远程 Hanako 后端。切换后需要重启应用。',
+            'Connect this desktop client to a remote Hanako backend. Restart is required after changes.',
+          )}
+        </p>
+
+        <div className="settings-field">
+          <label className="settings-field-label">
+            {tx('settings.gateway.current', '当前连接', 'Current Connection')}
+          </label>
+          <div className="settings-field-hint">
+            {serverMode === 'remote'
+              ? `${tx('settings.gateway.mode.remote', '远程网关', 'Remote gateway')} · ${serverBaseUrl || '-'}`
+              : `${tx('settings.gateway.mode.local', '本地内置服务', 'Local embedded server')} · ${serverBaseUrl || '-'}`}
+          </div>
+        </div>
+
+        <div className="settings-field">
+          <label className="settings-field-label">
+            {tx('settings.gateway.mode', '连接模式', 'Connection Mode')}
+          </label>
+          <SelectWidget
+            options={[
+              { value: 'local', label: tx('settings.gateway.mode.local', '本地内置服务', 'Local embedded server') },
+              { value: 'remote', label: tx('settings.gateway.mode.remote', '远程网关', 'Remote gateway') },
+            ]}
+            value={gatewayMode}
+            onChange={(value) => setGatewayMode(value as 'local' | 'remote')}
+          />
+        </div>
+
+        <div className={`settings-field${gatewayMode === 'remote' ? '' : ' settings-disabled'}`}>
+          <label className="settings-field-label">
+            {tx('settings.gateway.baseUrl', '网关地址', 'Gateway URL')}
+          </label>
+          <input
+            type="url"
+            className="settings-input"
+            value={gatewayBaseUrl}
+            disabled={gatewayMode !== 'remote'}
+            placeholder="https://your-gateway.example.com"
+            onChange={(e) => setGatewayBaseUrl(e.target.value)}
+          />
+          <span className="settings-field-hint">
+            {tx(
+              'settings.gateway.baseUrlHint',
+              '填写远程 Hanako 服务的根地址，例如 https://host 或 https://host/hanako',
+              'Use the remote Hanako base URL, for example https://host or https://host/hanako',
+            )}
+          </span>
+        </div>
+
+        <div className={`settings-field${gatewayMode === 'remote' ? '' : ' settings-disabled'}`}>
+          <label className="settings-field-label">
+            {tx('settings.gateway.token', '访问令牌', 'Access Token')}
+          </label>
+          <input
+            type="password"
+            className="settings-input"
+            value={gatewayToken}
+            disabled={gatewayMode !== 'remote'}
+            placeholder={tx('settings.gateway.tokenPlaceholder', '可选，如果网关要求 Bearer Token', 'Optional if the gateway requires a Bearer token')}
+            onChange={(e) => setGatewayToken(e.target.value)}
+          />
+        </div>
+
+        <div className="settings-section-footer">
+          <button className="settings-save-btn-sm" onClick={saveGateway} disabled={gatewaySaving}>
+            {gatewaySaving
+              ? tx('settings.gateway.saving', '保存中...', 'Saving...')
+              : tx('settings.gateway.save', '保存网关配置', 'Save Gateway Settings')}
+          </button>
         </div>
       </section>
 

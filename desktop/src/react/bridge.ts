@@ -8,7 +8,9 @@
  */
 
 import { useStore, type StoreState } from './stores';
-import { hanaFetch } from './hooks/use-hana-fetch';
+import { isImageFile } from './utils/format';
+import { showToast } from './utils/toast';
+import { formatUploadRejection, uploadChatFiles } from './utils/upload-files';
 import { setupSidebarShim } from './shims/sidebar-shim';
 import { setupChannelsShim } from './shims/channels-shim';
 import { setupAppMessagesShim } from './shims/app-messages-shim';
@@ -170,29 +172,49 @@ function setupLegacyShims(): void {
           }
           if (srcPaths.length === 0) return;
 
-          try {
-            const res = await hanaFetch('/api/upload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ paths: srcPaths }),
+          const remoteMode = useStore.getState().serverMode === 'remote';
+          const imageItems = remoteMode
+            ? srcPaths.filter((p) => isImageFile(nameMap[p] || p))
+            : [];
+          const uploadItems = remoteMode
+            ? srcPaths
+                .filter((p) => !imageItems.includes(p))
+                .map((path) => ({ path, name: nameMap[path] || baseName(path) }))
+            : srcPaths.map((path) => ({ path, name: nameMap[path] || baseName(path) }));
+
+          for (const imagePath of imageItems) {
+            useStore.getState().addAttachedFile({
+              path: imagePath,
+              name: nameMap[imagePath] || baseName(imagePath),
+              localPath: imagePath,
             });
-            const data = await res.json();
-            for (const item of (data.uploads || [])) {
+          }
+
+          try {
+            const { uploads, rejected } = await uploadChatFiles(uploadItems);
+            for (const item of uploads) {
               if (item.dest) {
                 useStore.getState().addAttachedFile({
                   path: item.dest,
-                  name: item.name,
+                  name: item.name || baseName(item.dest),
                   isDirectory: item.isDirectory || false,
                 });
               }
             }
+            for (const rejection of rejected) {
+              showToast(formatUploadRejection(rejection), 'error', 6000);
+            }
           } catch (err) {
             console.error('[upload]', err);
-            for (const p of srcPaths) {
-              useStore.getState().addAttachedFile({
-                path: p,
-                name: nameMap[p] || p.split('/').pop() || p,
-              });
+            if (!remoteMode) {
+              for (const p of srcPaths) {
+                useStore.getState().addAttachedFile({
+                  path: p,
+                  name: nameMap[p] || p.split('/').pop() || p,
+                });
+              }
+            } else {
+              showToast('远程上传失败，请重试', 'error', 6000);
             }
           }
         });

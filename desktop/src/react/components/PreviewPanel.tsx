@@ -16,6 +16,7 @@ import { useStore } from '../stores';
 import { renderMarkdown } from '../utils/markdown';
 import { parseCSV, injectCopyButtons } from '../utils/format';
 import { fileIconSvg } from '../utils/icons';
+import { openWorkspaceFile } from '../utils/remote-files';
 import { ArtifactEditor } from './ArtifactEditor';
 import type { Artifact } from '../types';
 
@@ -193,7 +194,7 @@ export function PreviewPanel() {
         openBtn.className = 'preview-file-open-btn';
         openBtn.textContent = _t('desk.openWithDefault');
         openBtn.addEventListener('click', () => {
-          if (artifact.filePath) window.platform?.openFile?.(artifact.filePath);
+          if (artifact.filePath) openWorkspaceFile(artifact.filePath, artifact.title);
         });
         wrap.appendChild(iconEl);
         wrap.appendChild(nameEl);

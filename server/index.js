@@ -205,7 +205,7 @@ app.post("/api/shutdown", async () => {
 
 // ── 启动服务器 ──
 const port = parseInt(process.env.HANA_PORT) || 0; // 0 = OS 分配
-const host = "127.0.0.1";
+const host = process.env.HANA_HOST || "127.0.0.1";
 
 try {
   await app.listen({ port, host });

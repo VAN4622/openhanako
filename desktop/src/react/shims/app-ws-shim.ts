@@ -6,6 +6,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
+import { buildWebSocketUrl } from '../utils/server-url';
+
 declare function t(key: string, vars?: Record<string, string>): any;
 
 interface AppWsCtx {
@@ -220,8 +222,7 @@ function connectWS(): void {
     try { state.ws.onclose = null; state.ws.close(); } catch { /* silent */ }
   }
 
-  const tokenParam = state.serverToken ? `?token=${state.serverToken}` : '';
-  const url = `ws://127.0.0.1:${state.serverPort}/ws${tokenParam}`;
+  const url = buildWebSocketUrl(state.serverBaseUrl, state.serverToken, '/ws');
   state.ws = new WebSocket(url);
 
   state.ws.onopen = () => {

@@ -86,8 +86,15 @@ async function initSettings() {
   const store = useSettingsStore.getState();
   try {
     const serverPort = await platform.getServerPort();
+    const serverBaseUrl = await (platform.getServerBaseUrl?.() ?? Promise.resolve(''));
     const serverToken = await platform.getServerToken();
-    store.set({ serverPort, serverToken });
+    const serverMode = await (platform.getServerMode?.() ?? Promise.resolve('local'));
+    const gatewayConfig = await (platform.getGatewayConfig?.() ?? Promise.resolve({
+      mode: 'local',
+      baseUrl: '',
+      token: '',
+    }));
+    store.set({ serverPort, serverBaseUrl, serverToken, serverMode, gatewayConfig });
 
     // i18n
     const i18n = (window as any).i18n;

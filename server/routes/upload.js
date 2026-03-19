@@ -1,17 +1,9 @@
 /**
- * upload.js — 文件上传路由
+ * upload.js - generic attachment staging endpoint
  *
- * POST /api/upload
- * Body: { paths: ["/absolute/path/to/file_or_dir", ...] }
- *
- * 纯粹的"搬运"操作：把文件或文件夹复制到统一的 uploads 目录。
- * 不做任何业务判断（PDF 解析、图片识别等由 skill 层处理）。
- *
- * 存储位置：
- *   - 有工作目录时：{cwd}/.hanako-uploads/
- *   - 无工作目录时：{os.tmpdir()}/.hanako-uploads/
- *
- * 返回复制后的新路径列表，供 agent 通过 read_file / list_files 访问。
+ * Supports two compatible modes:
+ * - legacy local-desktop mode: { paths: ["/absolute/path", ...] }
+ * - remote-gateway mode: { files: [{ name, data(base64) }, ...] }
  */
 import fs from "fs";
 import path from "path";
@@ -19,8 +11,8 @@ import os from "os";
 import { t } from "../i18n.js";
 
 const MAX_FILES = 9;
+const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
 
-/** 递归统计路径中的文件数量（文件夹递归计数内部文件，普通文件计 1） */
 function countFiles(p) {
   try {
     const stat = fs.statSync(p);
@@ -35,7 +27,6 @@ function countFiles(p) {
   }
 }
 
-/** 清理超过 24 小时的上传临时文件 */
 function cleanOldUploads(uploadsDir) {
   try {
     if (!fs.existsSync(uploadsDir)) return;
@@ -52,17 +43,54 @@ function cleanOldUploads(uploadsDir) {
   } catch {}
 }
 
+function writeUploadedContent(uploadsDir, file) {
+  const rawName = typeof file?.name === "string" ? file.name.trim() : "";
+  const data = typeof file?.data === "string" ? file.data.trim() : "";
+  if (!rawName || !data) {
+    throw new Error("name and data are required");
+  }
+
+  const safeName = path.basename(rawName);
+  const ext = path.extname(safeName);
+  const base = path.basename(safeName, ext) || "upload";
+  const buf = Buffer.from(data, "base64");
+  if (!buf.length) {
+    throw new Error("Uploaded file is empty");
+  }
+  if (buf.length > MAX_UPLOAD_BYTES) {
+    throw new Error(`Uploaded file exceeds ${MAX_UPLOAD_BYTES} bytes`);
+  }
+
+  const destName = `${base}_${Date.now().toString(36)}${ext}`;
+  const destPath = path.join(uploadsDir, destName);
+  fs.writeFileSync(destPath, buf);
+  return {
+    src: rawName,
+    dest: destPath,
+    name: safeName,
+    isDirectory: false,
+    size: buf.length,
+  };
+}
+
 export default async function uploadRoute(app, { engine }) {
   app.post("/api/upload", async (req, reply) => {
-    const { paths } = req.body || {};
-    if (!Array.isArray(paths) || paths.length === 0) {
+    const { paths, files } = req.body || {};
+    const hasPaths = Array.isArray(paths) && paths.length > 0;
+    const hasFiles = Array.isArray(files) && files.length > 0;
+
+    if (!hasPaths && !hasFiles) {
       return reply.code(400).send({ error: t("error.pathsRequired") });
     }
 
-    // 统计总文件数（文件夹递归计数）
     let totalFiles = 0;
-    for (const p of paths) {
-      totalFiles += countFiles(p);
+    if (hasPaths) {
+      for (const p of paths) {
+        totalFiles += countFiles(p);
+      }
+    }
+    if (hasFiles) {
+      totalFiles += files.length;
     }
     if (totalFiles > MAX_FILES) {
       return reply.code(400).send({
@@ -72,7 +100,6 @@ export default async function uploadRoute(app, { engine }) {
       });
     }
 
-    // 确定 uploads 目录
     const cwd = engine.cwd;
     const isRealCwd = cwd !== process.cwd();
     const uploadsDir = isRealCwd
@@ -80,49 +107,56 @@ export default async function uploadRoute(app, { engine }) {
       : path.join(os.tmpdir(), ".hanako-uploads");
 
     fs.mkdirSync(uploadsDir, { recursive: true });
-
-    // 清理超过 24 小时的旧上传文件
     cleanOldUploads(uploadsDir);
 
     const results = [];
 
-    for (const srcPath of paths) {
-      try {
-        if (!path.isAbsolute(srcPath)) {
-          results.push({ src: srcPath, error: "Path must be absolute" });
-          continue;
+    if (hasPaths) {
+      for (const srcPath of paths) {
+        try {
+          if (!path.isAbsolute(srcPath)) {
+            results.push({ src: srcPath, error: "Path must be absolute" });
+            continue;
+          }
+          if (!fs.existsSync(srcPath)) {
+            results.push({ src: srcPath, error: t("error.pathNotFound") });
+            continue;
+          }
+
+          const stat = fs.statSync(srcPath);
+          const name = path.basename(srcPath);
+          const timestamp = Date.now().toString(36);
+          const isDir = stat.isDirectory();
+          const ext = isDir ? "" : path.extname(srcPath);
+          const base = isDir ? name : path.basename(srcPath, ext);
+          const destName = `${base}_${timestamp}${ext}`;
+          const destPath = path.join(uploadsDir, destName);
+
+          if (isDir) {
+            fs.cpSync(srcPath, destPath, { recursive: true });
+          } else {
+            fs.copyFileSync(srcPath, destPath);
+          }
+
+          results.push({
+            src: srcPath,
+            dest: destPath,
+            name,
+            isDirectory: isDir,
+          });
+        } catch (err) {
+          results.push({ src: srcPath, error: err.message });
         }
-        if (!fs.existsSync(srcPath)) {
-          results.push({ src: srcPath, error: t("error.pathNotFound") });
-          continue;
+      }
+    }
+
+    if (hasFiles) {
+      for (const file of files) {
+        try {
+          results.push(writeUploadedContent(uploadsDir, file));
+        } catch (err) {
+          results.push({ src: file?.name || null, error: err.message });
         }
-
-        const stat = fs.statSync(srcPath);
-        const name = path.basename(srcPath);
-        const timestamp = Date.now().toString(36);
-        const isDir = stat.isDirectory();
-
-        // 统一命名：原名_时间戳（文件保留扩展名）
-        const ext = isDir ? "" : path.extname(srcPath);
-        const base = isDir ? name : path.basename(srcPath, ext);
-        const destName = `${base}_${timestamp}${ext}`;
-        const destPath = path.join(uploadsDir, destName);
-
-        if (isDir) {
-          // 递归复制整个目录
-          fs.cpSync(srcPath, destPath, { recursive: true });
-        } else {
-          fs.copyFileSync(srcPath, destPath);
-        }
-
-        results.push({
-          src: srcPath,
-          dest: destPath,
-          name,
-          isDirectory: isDir,
-        });
-      } catch (err) {
-        results.push({ src: srcPath, error: err.message });
       }
     }
 

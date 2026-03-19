@@ -20,6 +20,7 @@ const SKIP_TO_TUTORIAL = _params.has("skipToTutorial"); // 老用户，跳过配
 // ── State ──
 const state = {
   serverPort: null,
+  serverBaseUrl: null,
   serverToken: null,
   currentStep: 0,
   totalSteps: 6,
@@ -58,11 +59,12 @@ const PROVIDER_PRESETS = [
 
 // ── Server 通信 ──
 function hanaFetch(urlPath, opts = {}) {
+  const baseUrl = state.serverBaseUrl || (state.serverPort ? `http://127.0.0.1:${state.serverPort}` : "");
   const headers = { ...opts.headers };
   if (state.serverToken) {
     headers["Authorization"] = `Bearer ${state.serverToken}`;
   }
-  return fetch(`http://127.0.0.1:${state.serverPort}${urlPath}`, { ...opts, headers });
+  return fetch(`${baseUrl}${urlPath}`, { ...opts, headers });
 }
 
 // ── 错误提示 ──
@@ -760,6 +762,7 @@ async function loadAvatar() {
 (async function init() {
   try {
     state.serverPort = await window.hana.getServerPort();
+    state.serverBaseUrl = await (window.hana.getServerBaseUrl?.() || Promise.resolve(state.serverPort ? `http://127.0.0.1:${state.serverPort}` : ""));
     state.serverToken = await window.hana.getServerToken();
 
     // 从 splash info 获取 locale 和 agent 名字

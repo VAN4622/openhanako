@@ -7,6 +7,9 @@
 import { useStore } from '../stores';
 import { escapeHtml } from '../utils/format';
 import { hanaFetch } from '../hooks/use-hana-fetch';
+import { copyWorkspacePath, openWorkspaceFile, revealWorkspaceDirectory } from '../utils/remote-files';
+import { showToast } from '../utils/toast';
+import { formatUploadRejection, uploadDeskFiles } from '../utils/upload-files';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -34,7 +37,7 @@ function deskCurrentDir(): string | null {
 
 async function loadDeskFiles(subdir?: string, overrideDir?: string): Promise<void> {
   const s = useStore.getState();
-  if (!s.serverPort) return;
+  if (!s.serverBaseUrl) return;
   if (subdir !== undefined) s.setDeskCurrentPath(subdir);
   try {
     const params = new URLSearchParams();
@@ -56,7 +59,7 @@ async function loadDeskFiles(subdir?: string, overrideDir?: string): Promise<voi
 
 async function loadJianContent(): Promise<void> {
   const s = useStore.getState();
-  if (!s.serverPort) return;
+  if (!s.serverBaseUrl) return;
   try {
     const params = new URLSearchParams();
     if (s.deskBasePath) params.set('dir', s.deskBasePath);
@@ -73,7 +76,7 @@ async function loadJianContent(): Promise<void> {
 
 async function saveJianContent(content?: string): Promise<void> {
   const s = useStore.getState();
-  if (!s.serverPort) return;
+  if (!s.serverBaseUrl) return;
   const text = content ?? s.deskJianContent ?? '';
   try {
     await hanaFetch('/api/desk/jian', {
@@ -98,15 +101,17 @@ async function saveJianContent(content?: string): Promise<void> {
 async function deskUploadFiles(paths: string[]): Promise<void> {
   const s = useStore.getState();
   try {
-    const res = await hanaFetch('/api/desk/files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload', dir: s.deskBasePath || undefined, subdir: s.deskCurrentPath || '', paths }),
-    });
-    const data = await res.json();
+    const data = await uploadDeskFiles(
+      paths.map((path) => ({ path })),
+      { dir: s.deskBasePath || undefined, subdir: s.deskCurrentPath || '' },
+    );
     if (data.files) useStore.getState().setDeskFiles(data.files);
+    for (const rejection of data.rejected || []) {
+      showToast(formatUploadRejection(rejection), 'error', 6000);
+    }
   } catch (err) {
     console.error('[jian-desk] upload failed:', err);
+    showToast('远程上传失败，请重试', 'error', 6000);
   }
 }
 
@@ -288,13 +293,13 @@ function showDeskContextMenu(x: number, y: number, file: { name: string; isDir: 
     if (file.isDir) {
       const sub = s.deskCurrentPath ? s.deskCurrentPath + '/' + file.name : file.name;
       items.push({ label: t('desk.ctx.open'), action: () => loadDeskFiles(sub) });
-      items.push({ label: t('desk.ctx.openInFinder'), action: () => { const p = deskFullPath(file.name); if (p) (window as any).platform?.showInFinder?.(p); } });
+      items.push({ label: t('desk.ctx.openInFinder'), action: () => { const p = deskFullPath(file.name); if (p) revealWorkspaceDirectory(p, file.name); } });
     } else {
-      items.push({ label: t('desk.ctx.open'), action: () => { const p = deskFullPath(file.name); if (p) (window as any).platform?.openFile?.(p); } });
+      items.push({ label: t('desk.ctx.open'), action: () => { const p = deskFullPath(file.name); if (p) openWorkspaceFile(p, file.name); } });
     }
     if (!bulkNames) {
       items.push({ label: t('desk.ctx.rename'), action: () => { if (itemEl) startDeskRename(file, itemEl); } });
-      items.push({ label: t('desk.ctx.copyPath'), action: () => { const p = deskFullPath(file.name); if (p) navigator.clipboard.writeText(p).catch(() => {}); } });
+      items.push({ label: t('desk.ctx.copyPath'), action: () => { const p = deskFullPath(file.name); if (p) copyWorkspacePath(p); } });
     }
     items.push({ divider: true });
     const deleteLabel = bulkNames ? t('desk.ctx.deleteN', { n: bulkNames.length }) : t('desk.ctx.delete');
@@ -305,7 +310,7 @@ function showDeskContextMenu(x: number, y: number, file: { name: string; isDir: 
   } else {
     items.push({ label: t('desk.ctx.newMdFile'), action: () => deskCreateFile('') });
     items.push({ label: t('desk.ctx.newFolder'), action: () => deskMkdir() });
-    items.push({ label: t('desk.ctx.openInFinder'), action: () => { const p = deskCurrentDir(); if (p) (window as any).platform?.showInFinder?.(p); } });
+    items.push({ label: t('desk.ctx.openInFinder'), action: () => { const p = deskCurrentDir(); if (p) revealWorkspaceDirectory(p, p.split('/').pop() || p); } });
   }
   showContextMenu(x, y, items);
 }

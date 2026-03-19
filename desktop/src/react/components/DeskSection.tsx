@@ -10,6 +10,9 @@ import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import type { DeskFile, Artifact } from '../types';
 import { escapeHtml } from '../utils/format';
+import { revealWorkspaceDirectory } from '../utils/remote-files';
+import { showToast } from '../utils/toast';
+import { formatUploadRejection, uploadDeskFiles } from '../utils/upload-files';
 
 // ── SVG 图标 ──
 
@@ -73,7 +76,7 @@ function DeskOpenButton() {
     const target = s.deskCurrentPath
       ? s.deskBasePath + '/' + s.deskCurrentPath
       : s.deskBasePath;
-    window.platform?.showInFinder?.(target);
+    revealWorkspaceDirectory(target, target.split('/').pop() || target);
   }, []);
 
   return (
@@ -206,11 +209,13 @@ async function handleExternalDropToFolder(
 
   if (externalPaths.length > 0) {
     const subdir = curPath ? curPath + '/' + folderName : folderName;
-    await (getDeskCtx().hanaFetch)('/api/desk/files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload', dir: basePath || undefined, subdir, paths: externalPaths }),
-    });
+    const data = await uploadDeskFiles(
+      externalPaths.map((path) => ({ path })),
+      { dir: basePath || undefined, subdir },
+    );
+    for (const rejection of data.rejected || []) {
+      showToast(formatUploadRejection(rejection), 'error', 6000);
+    }
     getDeskCtx().loadDeskFiles(curPath || '');
   }
 }

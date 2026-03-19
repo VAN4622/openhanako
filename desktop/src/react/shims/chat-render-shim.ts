@@ -7,6 +7,7 @@
  */
 
 import { useStore } from '../stores';
+import { openWorkspaceFile, revealWorkspaceDirectory } from '../utils/remote-files';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -139,7 +140,7 @@ function addUserMessage(text: string, files?: Array<{ isDirectory?: boolean; nam
           const fExt = (f.name.split('.').pop() || '').toLowerCase();
           readFn(f.path, fExt).then(content => {
             if (content == null) {
-              (window as any).platform?.openFile?.(f.path);
+              openWorkspaceFile(f.path, f.name);
               return;
             }
             const artifact = { id: `file-${f.path}`, type: 'image', title: f.name, content, filePath: f.path, ext: fExt };
@@ -171,14 +172,14 @@ function addUserMessage(text: string, files?: Array<{ isDirectory?: boolean; nam
 
             if (f.isDirectory) {
               // 文件夹：在访达中打开
-              (window as any).platform?.showInFinder?.(f.path);
+              revealWorkspaceDirectory(f.path, f.name);
               return;
             }
 
             if (canPreview) {
               readFn(f.path, fExt).then(content => {
                 if (content == null) {
-                  (window as any).platform?.openFile?.(f.path);
+                  openWorkspaceFile(f.path, f.name);
                   return;
                 }
                 const previewType = previewExts[fExt];

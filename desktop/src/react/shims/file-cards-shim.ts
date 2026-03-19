@@ -1,17 +1,11 @@
-/**
- * file-cards-shim.ts — 文件卡片 / Skill 卡片
- *
- * 从 bridge.ts 提取（Phase 6D）。
- */
-
 import { useStore } from '../stores';
 import type { Artifact } from '../types';
 import { SVG_ICONS, fileIconSvg } from '../utils/icons';
+import { openWorkspaceFile, revealWorkspaceFile } from '../utils/remote-files';
 import { openPreview } from './artifacts-shim';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-// ── 可在 Artifacts 面板中预览的文件类型 ──
 const PREVIEWABLE_EXTS: Record<string, string> = {
   html: 'html', htm: 'html',
   md: 'markdown', markdown: 'markdown',
@@ -39,12 +33,23 @@ async function readFileForPreview(filePath: string, ext: string): Promise<string
   return p.readFile?.(filePath) ?? null;
 }
 
+function upsertArtifact(artifact: Artifact): void {
+  const s = useStore.getState();
+  const arts = [...s.artifacts];
+  const idx = arts.findIndex((a) => a.id === artifact.id);
+  if (idx >= 0) arts[idx] = artifact;
+  else arts.push(artifact);
+  s.setArtifacts(arts);
+}
+
 function appendFileCard(filePath: string, label: string, ext: string): void {
   const legacyState = window.__hanaState;
   const el = legacyState?.currentAssistantEl as HTMLElement | undefined;
   if (!el) return;
 
   const canPreview = ext in PREVIEWABLE_EXTS;
+  const fileName = label || filePath.split('/').pop() || filePath;
+
   const card = document.createElement('div');
   card.className = 'file-output-card file-output-previewable';
   card.style.cursor = 'pointer';
@@ -55,11 +60,10 @@ function appendFileCard(filePath: string, label: string, ext: string): void {
 
   const nameEl = document.createElement('span');
   nameEl.className = 'file-output-name';
-  nameEl.textContent = label || filePath;
+  nameEl.textContent = fileName;
 
   card.addEventListener('click', async (e) => {
     if ((e.target as HTMLElement).closest('.file-output-open')) return;
-    const fileName = label || filePath.split('/').pop() || filePath;
 
     if (ext === 'skill') {
       (window as any).platform?.openSkillViewer?.({ skillPath: filePath });
@@ -79,16 +83,12 @@ function appendFileCard(filePath: string, label: string, ext: string): void {
           ext,
           language: previewType === 'code' ? ext : undefined,
         };
-        const s = useStore.getState();
-        const arts = [...s.artifacts];
-        const idx = arts.findIndex(a => a.id === artifact.id);
-        if (idx >= 0) arts[idx] = artifact;
-        else arts.push(artifact);
-        s.setArtifacts(arts);
+        upsertArtifact(artifact);
         openPreview(artifact);
         return;
       }
     }
+
     const artifact: Artifact = {
       id: `file-${filePath}`,
       type: 'file-info',
@@ -97,12 +97,7 @@ function appendFileCard(filePath: string, label: string, ext: string): void {
       filePath,
       ext,
     };
-    const s = useStore.getState();
-    const arts = [...s.artifacts];
-    const idx = arts.findIndex(a => a.id === artifact.id);
-    if (idx >= 0) arts[idx] = artifact;
-    else arts.push(artifact);
-    s.setArtifacts(arts);
+    upsertArtifact(artifact);
     openPreview(artifact);
   });
 
@@ -111,28 +106,21 @@ function appendFileCard(filePath: string, label: string, ext: string): void {
   finderBtn.textContent = 'Finder';
   finderBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    (window as any).platform?.showInFinder?.(filePath);
+    revealWorkspaceFile(filePath, fileName);
   });
 
-  const btn = document.createElement('button');
-  btn.className = 'file-output-open';
-  btn.textContent = '↗ 外部打开';
-  btn.addEventListener('click', (e) => {
+  const openBtn = document.createElement('button');
+  openBtn.className = 'file-output-open';
+  openBtn.textContent = 'Open';
+  openBtn.addEventListener('click', (e) => {
     e.stopPropagation();
-    if ((window as any).platform?.openFile) {
-      (window as any).platform.openFile(filePath);
-    } else {
-      navigator.clipboard.writeText(filePath).then(() => {
-        btn.textContent = '已复制';
-        setTimeout(() => { btn.textContent = '↗ 外部打开'; }, 1500);
-      });
-    }
+    openWorkspaceFile(filePath, fileName);
   });
 
   card.appendChild(iconEl);
   card.appendChild(nameEl);
   card.appendChild(finderBtn);
-  card.appendChild(btn);
+  card.appendChild(openBtn);
   el.appendChild(card);
 }
 
@@ -155,22 +143,16 @@ function appendSkillCard(skillName: string, skillFilePath: string): void {
 
   card.addEventListener('click', async () => {
     const content = await (window as any).platform?.readFile?.(skillFilePath);
-    if (content != null) {
-      const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
-      const artifact: Artifact = {
-        id: `skill-${skillName}`,
-        type: 'markdown',
-        title: skillName,
-        content: body,
-      };
-      const s = useStore.getState();
-      const arts = [...s.artifacts];
-      const idx = arts.findIndex(a => a.id === artifact.id);
-      if (idx >= 0) arts[idx] = artifact;
-      else arts.push(artifact);
-      s.setArtifacts(arts);
-      openPreview(artifact);
-    }
+    if (content == null) return;
+    const body = content.replace(/^---\s*\n[\s\S]*?\n---\s*\n?/, '');
+    const artifact: Artifact = {
+      id: `skill-${skillName}`,
+      type: 'markdown',
+      title: skillName,
+      content: body,
+    };
+    upsertArtifact(artifact);
+    openPreview(artifact);
   });
 
   card.appendChild(iconEl);
@@ -185,6 +167,6 @@ export function setupFileCardsShim(modules: Record<string, unknown>): void {
     readFileForPreview,
     appendFileCard,
     appendSkillCard,
-    initFileCards: () => { /* 不再需要 ctx 注入 */ },
+    initFileCards: () => {},
   };
 }

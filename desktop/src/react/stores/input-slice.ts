@@ -2,7 +2,8 @@ export interface AttachedFile {
   path: string;
   name: string;
   isDirectory?: boolean;
-  /** 内联 base64 数据（粘贴图片时使用，跳过文件读取） */
+  localPath?: string;
+  /** Inline base64 data, used for pasted images. */
   base64Data?: string;
   mimeType?: string;
 }

@@ -180,7 +180,7 @@ function switchTab(tab: string): void {
 
 async function loadChannels(): Promise<void> {
   const s = state();
-  if (!s.serverPort) return;
+  if (!s.serverBaseUrl) return;
   try {
     // 同时加载 channels 和 DMs
     const [chRes, dmRes] = await Promise.all([
