@@ -13,6 +13,7 @@ const os = require("os");
 const path = require("path");
 const { fork, execFileSync } = require("child_process");
 const fs = require("fs");
+const WebSocket = require("ws");
 
 // macOS/Linux: Electron 从 Dock/Finder 启动时 PATH 只有系统默认值，
 // Homebrew、npm global 等路径全部丢失。用登录 shell 解析完整 PATH。
@@ -67,6 +68,8 @@ let serverBaseUrl = null;
 let serverToken = null;
 let serverMode = "local";
 let gatewayFallbackError = null;
+let browserBridgeSocket = null;
+let browserBridgeReconnectTimer = null;
 let isQuitting = false;  // 区分关窗口（hide）和真正退出（quit）
 let tray = null;
 let reusedServerPid = null; // 复用已有 server 时记录其 PID，退出时发 SIGTERM
@@ -217,6 +220,15 @@ function derivePortFromBaseUrl(baseUrl) {
     if (parsed.protocol === "http:") return "80";
   } catch {}
   return null;
+}
+
+function buildBrowserBridgeUrl(baseUrl, token) {
+  const parsed = new URL(baseUrl);
+  parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/ws/browser-bridge`;
+  if (token) parsed.searchParams.set("token", token);
+  parsed.searchParams.set("deviceId", `${os.hostname()}-${process.pid}`);
+  return parsed.toString();
 }
 
 function readGatewayConfig() {
@@ -1467,6 +1479,10 @@ async function handleBrowserCommand(cmd, params) {
 
 /** 监听 server 进程的浏览器命令 */
 function setupBrowserCommands() {
+  if (serverMode === "remote") {
+    setupRemoteBrowserBridge();
+    return;
+  }
   if (!serverProcess) return;
   serverProcess.on("message", async (msg) => {
     if (msg?.type !== "browser-cmd") return;
@@ -1480,6 +1496,82 @@ function setupBrowserCommands() {
       if (serverProcess && !serverProcess.killed) {
         serverProcess.send({ type: "browser-result", id, error: err.message });
       }
+    }
+  });
+}
+
+function clearRemoteBrowserBridge({ terminate = false } = {}) {
+  if (browserBridgeReconnectTimer) {
+    clearTimeout(browserBridgeReconnectTimer);
+    browserBridgeReconnectTimer = null;
+  }
+  const ws = browserBridgeSocket;
+  browserBridgeSocket = null;
+  if (!ws) return;
+  try {
+    if (terminate) ws.terminate();
+    else ws.close();
+  } catch {}
+}
+
+function scheduleRemoteBrowserBridgeReconnect(delayMs = 3000) {
+  if (browserBridgeReconnectTimer || serverMode !== "remote" || isQuitting) return;
+  browserBridgeReconnectTimer = setTimeout(() => {
+    browserBridgeReconnectTimer = null;
+    setupRemoteBrowserBridge();
+  }, delayMs);
+}
+
+function setupRemoteBrowserBridge() {
+  if (serverMode !== "remote" || !serverBaseUrl) {
+    clearRemoteBrowserBridge();
+    return;
+  }
+  if (browserBridgeSocket && (
+    browserBridgeSocket.readyState === WebSocket.OPEN ||
+    browserBridgeSocket.readyState === WebSocket.CONNECTING
+  )) {
+    return;
+  }
+
+  const wsUrl = buildBrowserBridgeUrl(serverBaseUrl, serverToken);
+  const ws = new WebSocket(wsUrl);
+  browserBridgeSocket = ws;
+
+  ws.on("open", () => {
+    console.log("[desktop] Browser bridge connected");
+  });
+
+  ws.on("message", async (raw) => {
+    let msg = null;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
+    if (!msg || msg.type !== "browser-cmd") return;
+    const { id, cmd, params } = msg;
+    try {
+      const result = await handleBrowserCommand(cmd, params || {});
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "browser-result", id, result }));
+      }
+    } catch (err) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "browser-result", id, error: err.message }));
+      }
+    }
+  });
+
+  ws.on("error", (err) => {
+    console.error("[desktop] Browser bridge error:", err.message);
+  });
+
+  ws.on("close", () => {
+    if (browserBridgeSocket === ws) browserBridgeSocket = null;
+    if (!isQuitting && serverMode === "remote") {
+      console.warn("[desktop] Browser bridge disconnected, retrying...");
+      scheduleRemoteBrowserBridgeReconnect();
     }
   });
 }
@@ -2301,6 +2393,7 @@ app.on("before-quit", async (event) => {
     return;
   }
   // 完全退出：清理浏览器实例（仅在真正退出时执行，避免隐藏路径打断后台浏览器能力）
+  clearRemoteBrowserBridge({ terminate: true });
   for (const [sp, view] of _browserViews) {
     try { view.webContents.close(); } catch {}
   }

@@ -39,6 +39,7 @@ import fsRoute from "./routes/fs.js";
 import preferencesRoute from "./routes/preferences.js";
 import bridgeRoute from "./routes/bridge.js";
 import conversationsRoute from "./routes/conversations.js";
+import browserBridgeRoute from "./routes/browser-bridge.js";
 import authRoute from "./routes/auth.js";
 import diaryRoute from "./routes/diary.js";
 import { BridgeManager } from "../lib/bridge/bridge-manager.js";
@@ -171,6 +172,7 @@ app.register(fsRoute, { engine });
 app.register(preferencesRoute, { engine });
 app.register(bridgeRoute, { engine, bridgeManager });
 app.register(conversationsRoute, { engine });
+app.register(browserBridgeRoute, { engine });
 app.register(authRoute, { engine });
 app.register(diaryRoute, { engine });
 
