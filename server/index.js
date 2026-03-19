@@ -84,9 +84,14 @@ BrowserManager.setSessionResolver(() => engine.currentSessionPath);
 
 if (engine.currentModel) {
   console.log("[server] ③ 创建 session...");
-  await engine.createSession();
-  console.log("[server] ③ Session created");
-  dlog.log("server", `session created, model=${engine.currentModel.name}`);
+  try {
+    await engine.createSession();
+    console.log("[server] ③ Session created");
+    dlog.log("server", `session created, model=${engine.currentModel.name}`);
+  } catch (err) {
+    console.warn(`[server] ⚠ initial session creation failed: ${err.message}`);
+    dlog.warn("server", `initial session creation failed: ${err.message}`);
+  }
 } else {
   console.warn("[server] ⚠ 无可用模型，跳过 session 创建。请在设置中配置 API key。");
   dlog.warn("server", "no models available, session creation skipped");
