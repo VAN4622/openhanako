@@ -66,6 +66,7 @@ let serverPort = null;
 let serverBaseUrl = null;
 let serverToken = null;
 let serverMode = "local";
+let gatewayFallbackError = null;
 let isQuitting = false;  // 区分关窗口（hide）和真正退出（quit）
 let tray = null;
 let reusedServerPid = null; // 复用已有 server 时记录其 PID，退出时发 SIGTERM
@@ -444,9 +445,18 @@ async function startServer() {
 async function connectBackend() {
   const gateway = readGatewayConfig();
   if (gateway.mode === "remote") {
-    await connectRemoteGateway(gateway);
-    return;
+    try {
+      await connectRemoteGateway(gateway);
+      gatewayFallbackError = null;
+      return;
+    } catch (err) {
+      gatewayFallbackError = err;
+      console.warn(`[desktop] Remote gateway unavailable, falling back to local server: ${err.message}`);
+      await startServer();
+      return;
+    }
   }
+  gatewayFallbackError = null;
   await startServer();
 }
 
@@ -2191,6 +2201,17 @@ app.whenReady().then(async () => {
       // 全新用户：完整 onboarding 向导
       console.log("[desktop] 首次启动，显示 Onboarding 向导");
       createOnboardingWindow();
+    }
+
+    if (gatewayFallbackError) {
+      const message = String(gatewayFallbackError?.message || gatewayFallbackError || "Unknown gateway error");
+      dialog.showMessageBox({
+        type: "warning",
+        title: "Remote Gateway Unavailable",
+        message: "Hanako 无法连接远程网关，已临时回退到本地内置后端。",
+        detail: `${message}\n\n请在设置中检查网关地址和访问令牌，保存后重启应用。`,
+        buttons: ["知道了"],
+      }).catch(() => {});
     }
 
     // 5. 注册 DevTools 快捷键（Cmd+Option+=，仅 dev 模式）
