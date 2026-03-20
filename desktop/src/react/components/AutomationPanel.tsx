@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaFetch, hanaUrl } from '../hooks/use-hana-fetch';
 import { cronToHuman } from '../utils/format';
+import { yuanFallbackAvatar } from '../utils/agent-helpers';
 
 interface CronJob {
   id: string;
@@ -23,11 +23,6 @@ export function AutomationPanel() {
 
   const [jobs, setJobs] = useState<CronJob[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
-  const containerRef = useRef<Element | null>(null);
-
-  useEffect(() => {
-    containerRef.current = document.querySelector('.main-content');
-  }, []);
 
   const loadData = useCallback(async () => {
     try {
@@ -93,9 +88,9 @@ export function AutomationPanel() {
     }
   }, [loadData]);
 
-  if (activePanel !== 'automation' || !containerRef.current) return null;
+  if (activePanel !== 'automation') return null;
 
-  return createPortal(
+  return (
     <div className={`floating-panel${panelClosing ? ' closing' : ''}`} id="automationPanel">
       <div className="floating-panel-inner">
         <div className="floating-panel-header">
@@ -130,19 +125,8 @@ export function AutomationPanel() {
           </div>
         </div>
       </div>
-    </div>,
-    containerRef.current,
+    </div>
   );
-}
-
-function yuanFallbackAvatar(yuan?: string): string {
-  const t = window.t ?? ((p: string) => p);
-  const types = t('yuan.types') as unknown;
-  if (types && typeof types === 'object') {
-    const entry = (types as Record<string, { avatar?: string }>)[yuan || 'hanako'];
-    return `assets/${entry?.avatar || 'Hanako.png'}`;
-  }
-  return 'assets/Hanako.png';
 }
 
 function updateBadge(jobs: CronJob[]) {

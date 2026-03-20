@@ -1,8 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaFetch, hanaUrl } from '../hooks/use-hana-fetch';
 import { formatSessionDate, injectCopyButtons, parseMoodFromContent } from '../utils/format';
+import { yuanFallbackAvatar } from '../utils/agent-helpers';
+
+// ── 稳定头像时间戳（避免每次渲染生成新 URL） ──
+let _avatarTs = Date.now();
 
 interface ActivityItem {
   id: string;
@@ -27,16 +30,6 @@ interface DetailState {
   messages: DetailMessage[];
 }
 
-function yuanFallbackAvatar(yuan?: string): string {
-  const t = window.t ?? ((p: string) => p);
-  const types = t('yuan.types') as unknown;
-  if (types && typeof types === 'object') {
-    const entry = (types as Record<string, { avatar?: string }>)[yuan || 'hanako'];
-    return `assets/${entry?.avatar || 'Hanako.png'}`;
-  }
-  return 'assets/Hanako.png';
-}
-
 export function ActivityPanel() {
   const activePanel = useStore(s => s.activePanel);
   const panelClosing = useStore(s => s.panelClosing);
@@ -48,12 +41,7 @@ export function ActivityPanel() {
 
   const [detail, setDetail] = useState<DetailState | null>(null);
   const [hbEnabled, setHbEnabled] = useState(true);
-  const containerRef = useRef<Element | null>(null);
   const t = window.t ?? ((p: string) => p);
-
-  useEffect(() => {
-    containerRef.current = document.querySelector('.main-content');
-  }, []);
 
   // 打开面板时加载活动 + 巡检状态
   useEffect(() => {
@@ -110,9 +98,9 @@ export function ActivityPanel() {
     setDetail(null);
   }, []);
 
-  if (activePanel !== 'activity' || !containerRef.current) return null;
+  if (activePanel !== 'activity') return null;
 
-  return createPortal(
+  return (
     <div className={`floating-panel${panelClosing ? ' closing' : ''}`} id="activityPanel">
       <div className="floating-panel-inner">
         {detail ? (
@@ -175,8 +163,7 @@ export function ActivityPanel() {
           </div>
         )}
       </div>
-    </div>,
-    containerRef.current,
+    </div>
   );
 }
 
@@ -194,7 +181,7 @@ function ActivityCard({
   onOpen: (id: string) => void;
 }) {
   const agentId = a.agentId || currentAgentId;
-  const avatarSrc = hanaUrl(`/api/agents/${agentId}/avatar?t=${Date.now()}`);
+  const avatarSrc = hanaUrl(`/api/agents/${agentId}/avatar?t=${_avatarTs}`);
   const ag = agents.find(x => x.id === agentId);
 
   const t = window.t ?? ((p: string) => p);

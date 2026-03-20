@@ -156,11 +156,18 @@ export class AgentManager {
           const lines = idMd.split("\n").filter(l => l.trim() && !l.startsWith("#"));
           identity = lines[0]?.trim() || "";
         } catch {}
+        const avatarDir = path.join(this._d.agentsDir, entry.name, "avatar");
+        let hasAvatar = false;
+        try {
+          const avatarFiles = fs.readdirSync(avatarDir);
+          hasAvatar = avatarFiles.some(f => /\.(png|jpe?g|gif|webp)$/i.test(f));
+        } catch {}
         agents.push({
           id: entry.name,
           name: cfg.agent?.name || entry.name,
           yuan: cfg.agent?.yuan || "hanako",
           identity,
+          hasAvatar,
         });
       } catch {}
     }
@@ -197,6 +204,11 @@ export class AgentManager {
     config = config.replace(/yuan: hanako/, `yuan: ${yuanType}`);
     if (userName) {
       config = config.replace(/user:\s*\n\s+name:\s*""/, `user:\n  name: "${userName}"`);
+    }
+    // 继承主 agent 的模型配置
+    const primaryChat = currentAgent?.config?.models?.chat || this._d.getModels().defaultModel?.id || "";
+    if (primaryChat) {
+      config = config.replace(/chat: ""/, `chat: "${primaryChat}"`);
     }
     fs.writeFileSync(path.join(agentDir, "config.yaml"), config, "utf-8");
 
@@ -259,7 +271,7 @@ export class AgentManager {
     try {
       const hub = this._d.getHub();
       await hub?.pauseForAgentSwitch();
-      await this._d.getSessionCoordinator().cleanupSession();
+      // Phase 1: 不再杀 session，只切 agent 指针
       clearConfigCache();
       this._activeAgentId = agentId;
 

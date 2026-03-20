@@ -7,36 +7,28 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaUrl } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
+import { loadDeskFiles } from '../stores/desk-actions';
+import { clearChat } from '../stores/agent-actions';
 import type { Agent } from '../types';
+import { yuanFallbackAvatar } from '../utils/agent-helpers';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+
+// ── 稳定头像时间戳（避免每次渲染生成新 URL） ──
+let _avatarTs = Date.now();
+export function refreshAvatarTs() { _avatarTs = Date.now(); }
 
 // ── 主组件 ──
 
 export function WelcomeScreen() {
   const portalTarget = document.getElementById('welcome');
-  if (!portalTarget) {
-    console.warn('[WelcomeScreen] portal target #welcome not found');
-    return null;
-  }
-  return createPortal(<WelcomeInner portalTarget={portalTarget} />, portalTarget);
+  return <WelcomeInner portalTarget={portalTarget} />;
 }
 
 // ── Yuan helpers ──
-
-function yuanFallbackAvatar(yuan?: string): string {
-  const t = window.t ?? ((p: string) => p);
-  const types = t('yuan.types') as unknown;
-  if (types && typeof types === 'object') {
-    const entry = (types as Record<string, { avatar?: string }>)[yuan || 'hanako'];
-    return `assets/${entry?.avatar || 'Hanako.png'}`;
-  }
-  return 'assets/Hanako.png';
-}
 
 function randomWelcome(agentName: string, yuan: string): string {
   const t = window.t ?? ((p: string) => p);
@@ -49,7 +41,7 @@ function randomWelcome(agentName: string, yuan: string): string {
 
 // ── 内部组件 ──
 
-function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
+function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement | null }) {
   const { t } = useI18n();
   const welcomeVisible = useStore(s => s.welcomeVisible);
   const agents = useStore(s => s.agents);
@@ -65,10 +57,12 @@ function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
 
   // Toggle #welcome hidden class based on welcomeVisible
   useEffect(() => {
+    const el = portalTarget || document.getElementById('welcome');
+    if (!el) return;
     if (welcomeVisible) {
-      portalTarget.classList.remove('hidden');
+      el.classList.remove('hidden');
     } else {
-      portalTarget.classList.add('hidden');
+      el.classList.add('hidden');
     }
   }, [welcomeVisible, portalTarget]);
 
@@ -107,6 +101,7 @@ function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
     <>
       <WelcomeAvatar
         agentId={displayAgent?.id || null}
+        hasAvatar={displayAgent?.hasAvatar ?? false}
         agentAvatarUrl={agentAvatarUrl}
         yuan={displayYuan}
         name={displayName}
@@ -130,20 +125,21 @@ function WelcomeInner({ portalTarget }: { portalTarget: HTMLElement }) {
 
 // ── Welcome Avatar ──
 
-function WelcomeAvatar({ agentId, agentAvatarUrl, yuan, name }: {
+function WelcomeAvatar({ agentId, hasAvatar, agentAvatarUrl, yuan, name }: {
   agentId: string | null;
+  hasAvatar: boolean;
   agentAvatarUrl: string | null;
   yuan: string;
   name: string;
 }) {
   const [src, setSrc] = useState(() => {
-    if (agentId) return hanaUrl(`/api/agents/${agentId}/avatar?t=${Date.now()}`);
+    if (agentId && hasAvatar) return hanaUrl(`/api/agents/${agentId}/avatar?t=${_avatarTs}`);
     return agentAvatarUrl || yuanFallbackAvatar(yuan);
   });
 
   useEffect(() => {
-    if (agentId) {
-      setSrc(hanaUrl(`/api/agents/${agentId}/avatar?t=${Date.now()}`));
+    if (agentId && hasAvatar) {
+      setSrc(hanaUrl(`/api/agents/${agentId}/avatar?t=${_avatarTs}`));
     } else if (agentAvatarUrl) {
       setSrc(agentAvatarUrl);
     } else {
@@ -173,8 +169,7 @@ function AgentChips({ agents, selectedId }: {
   selectedId: string | null;
 }) {
   const handleClick = useCallback((agentId: string) => {
-    const hanaState = window.__hanaState;
-    if (hanaState) hanaState.selectedAgentId = agentId;
+    useStore.setState({ selectedAgentId: agentId });
   }, []);
 
   return (
@@ -197,7 +192,7 @@ function AgentChip({ agent, isSelected, onClick }: {
   onClick: (id: string) => void;
 }) {
   const [src, setSrc] = useState(() =>
-    hanaUrl(`/api/agents/${agent.id}/avatar?t=${Date.now()}`),
+    agent.hasAvatar ? hanaUrl(`/api/agents/${agent.id}/avatar?t=${_avatarTs}`) : yuanFallbackAvatar(agent.yuan),
   );
 
   const handleError = useCallback(() => {
@@ -351,21 +346,19 @@ function FolderHistory({ cwdHistory, selectedFolder, onSelect, onBrowse }: {
 
 /** Apply folder selection — core logic preserved from bridge.ts desk shim */
 function applyFolderAction(folder: string, pendingNewSession: boolean): void {
-  const hanaState = window.__hanaState;
-  if (hanaState) hanaState.selectedFolder = folder;
+  useStore.setState({ selectedFolder: folder });
 
   if (!pendingNewSession) {
-    if (hanaState) {
-      hanaState.currentSessionPath = null;
-      hanaState.pendingNewSession = true;
-    }
-    (hanaState?.clearChat as (() => void) | undefined)?.();
+    useStore.setState({
+      currentSessionPath: null,
+      pendingNewSession: true,
+    });
+    clearChat();
     (document.getElementById('inputBox') as HTMLTextAreaElement | null)?.focus();
   }
 
   // Load desk files for the new folder
-  const desk = (window as any).HanaModules?.desk;
-  desk?.loadDeskFiles?.('', folder);
+  loadDeskFiles('', folder);
 }
 
 // ── Memory Toggle ──
@@ -375,8 +368,7 @@ function MemoryToggle({ enabled, t }: {
   t: (key: string) => string;
 }) {
   const handleClick = useCallback(() => {
-    const hanaState = window.__hanaState;
-    if (hanaState) hanaState.memoryEnabled = !hanaState.memoryEnabled;
+    useStore.setState((s: any) => ({ memoryEnabled: !s.memoryEnabled }));
   }, []);
 
   return (

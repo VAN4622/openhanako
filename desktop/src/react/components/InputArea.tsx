@@ -2,15 +2,17 @@
  * InputArea — 聊天输入区域 React 组件
  *
  * 替代 app-input-shim.ts + app-ui-shim.ts 中的模型/PlanMode/Todo 逻辑。
- * 通过 portal 渲染到 index.html 的 #inputAreaPortal。
+ * 由 App.tsx 在 .input-area 容器内直接渲染。
  */
 
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { isImageFile } from '../utils/format';
 import { hanaFetch } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
+import { ensureSession, loadSessions } from '../stores/session-actions';
+import { getWebSocket } from '../services/websocket';
+import { SVG_ICONS } from '../utils/icons';
 import type { ThinkingLevel } from '../stores/model-slice';
 
 // ── Toast 通知 ──
@@ -82,12 +84,7 @@ interface SlashCommand {
 // ── 主组件 ──
 
 export function InputArea() {
-  const portalEl = document.getElementById('inputAreaPortal');
-  if (!portalEl) {
-    console.warn('[InputArea] portal target #inputAreaPortal not found');
-    return null;
-  }
-  return createPortal(<InputAreaInner />, portalEl);
+  return <InputAreaInner />;
 }
 
 /** t() 翻译缺失时返回 key 本身（truthy），|| fallback 不会触发。这个包一层检测 */
@@ -147,20 +144,28 @@ function InputAreaInner() {
 
   /** 统一的"以用户身份发送"入口，所有斜杠命令共用 */
   const sendAsUser = useCallback(async (text: string, displayText?: string): Promise<boolean> => {
-    const state = (window as any).__hanaState;
-    if (!state.ws || state.ws.readyState !== WebSocket.OPEN) return false;
+    const ws = getWebSocket();
+    if (!ws || ws.readyState !== WebSocket.OPEN) return false;
     if (useStore.getState().isStreaming) return false;
 
     if (pendingNewSession) {
-      const _sb = () => (window as any).HanaModules.sidebar;
-      const ok = await _sb().ensureSession();
+      const ok = await ensureSession();
       if (!ok) return false;
-      _sb().loadSessions();
+      loadSessions();
     }
 
-    const _cr = () => (window as any).HanaModules.chatRender;
-    _cr().addUserMessage(displayText ?? text);
-    state.ws.send(JSON.stringify({ type: 'prompt', text }));
+    // 用户消息写入 store，React 渲染
+    const sessionPath = useStore.getState().currentSessionPath;
+    if (sessionPath) {
+      const { renderMarkdown } = await import('../utils/markdown');
+      const msgText = displayText ?? text;
+      useStore.getState().appendItem(sessionPath, {
+        type: 'message',
+        data: { id: `user-${Date.now()}`, role: 'user', text: msgText, textHtml: renderMarkdown(msgText) },
+      });
+      useStore.setState({ welcomeVisible: false });
+    }
+    ws.send(JSON.stringify({ type: 'prompt', text, sessionPath: useStore.getState().currentSessionPath }));
     return true;
   }, [pendingNewSession]);
 
@@ -199,9 +204,9 @@ function InputAreaInner() {
     setInputText('');
     setSlashMenuOpen(false);
     try {
-      const state = (window as any).__hanaState;
-      if (state.ws?.readyState === WebSocket.OPEN) {
-        state.ws.send(JSON.stringify({ type: 'compact' }));
+      const ws = getWebSocket();
+      if (ws?.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: 'compact' }));
       }
     } finally {
       // compaction_end 事件会通过 WS 回来，这里只需清 busy
@@ -343,12 +348,10 @@ function InputAreaInner() {
     setSending(true);
 
     try {
-      const state = window.__hanaState;
       if (pendingNewSession) {
-        const _sb = () => window.HanaModules.sidebar;
-        const ok = await _sb().ensureSession();
+        const ok = await ensureSession();
         if (!ok) return;
-        _sb().loadSessions();
+        loadSessions();
       }
 
       // 分离图片和非图片附件
@@ -405,40 +408,61 @@ function InputAreaInner() {
       if (docForRender) {
         allFiles.push({ path: docForRender.path, name: docForRender.name });
       }
-      const _cr = () => window.HanaModules.chatRender;
-      _cr().addUserMessage(text, allFiles.length > 0 ? allFiles : null, null);
+      // 用户消息写入 store
+      const sessionPath = useStore.getState().currentSessionPath;
+      if (sessionPath) {
+        const { renderMarkdown } = await import('../utils/markdown');
+        useStore.getState().appendItem(sessionPath, {
+          type: 'message',
+          data: {
+            id: `user-${Date.now()}`,
+            role: 'user',
+            text,
+            textHtml: renderMarkdown(text),
+            attachments: allFiles.length > 0 ? allFiles.map((f: any) => ({ path: f.path, name: f.name, isDir: false })) : undefined,
+          },
+        });
+        useStore.setState({ welcomeVisible: false });
+      }
 
       setInputText('');
       clearAttachedFiles();
 
-      const wsMsg: any = { type: 'prompt', text: finalText };
+      const ws = getWebSocket();
+      const wsMsg: any = { type: 'prompt', text: finalText, sessionPath: useStore.getState().currentSessionPath };
       if (images.length > 0) wsMsg.images = images;
-      state.ws?.send(JSON.stringify(wsMsg));
+      ws?.send(JSON.stringify(wsMsg));
     } finally {
       setSending(false);
     }
   }, [inputText, attachedFiles, docContextAttached, connected, isStreaming, sending, pendingNewSession, currentDoc, clearAttachedFiles, setDocContextAttached, slashMenuOpen, filteredCommands, slashSelected]);
 
   // ── Steer (插话) ──
-  const handleSteer = useCallback(() => {
+  const handleSteer = useCallback(async () => {
     const text = inputText.trim();
     if (!text || !isStreaming) return;
-    const state = window.__hanaState;
-    if (!state.ws) return;
+    const ws = getWebSocket();
+    if (!ws) return;
 
-    // 断开当前 assistant 消息组（不封存工具），让后续回复出现在 steer 消息下方
-    window.HanaModules.chatRender.breakAssistantGroup();
-    window.HanaModules.chatRender.addUserMessage(text, null, null);
+    // steer：用户消息写入 store
+    const sessionPath = useStore.getState().currentSessionPath;
+    if (sessionPath) {
+      const { renderMarkdown } = await import('../utils/markdown');
+      useStore.getState().appendItem(sessionPath, {
+        type: 'message',
+        data: { id: `user-${Date.now()}`, role: 'user', text, textHtml: renderMarkdown(text) },
+      });
+    }
 
     setInputText('');
-    state.ws.send(JSON.stringify({ type: 'steer', text }));
+    ws.send(JSON.stringify({ type: 'steer', text, sessionPath: useStore.getState().currentSessionPath }));
   }, [inputText, isStreaming]);
 
   // ── Stop generation ──
   const handleStop = useCallback(() => {
-    const state = window.__hanaState;
-    if (!isStreaming || !state.ws) return;
-    state.ws.send(JSON.stringify({ type: 'abort' }));
+    const ws = getWebSocket();
+    if (!isStreaming || !ws) return;
+    ws.send(JSON.stringify({ type: 'abort', sessionPath: useStore.getState().currentSessionPath }));
   }, [isStreaming]);
 
   // ── Key handler ──
@@ -592,8 +616,6 @@ function AttachedFilesBar({ files, onRemove }: {
   files: Array<{ path: string; name: string; isDirectory?: boolean }>;
   onRemove: (index: number) => void;
 }) {
-  const { SVG_ICONS } = (window as any).HanaModules?.icons ?? {};
-
   return (
     <div className="attached-files">
       {files.map((f, i) => (
@@ -685,28 +707,28 @@ function ContextRing() {
   const [contextWindow, setContextWindow] = useState<number | null>(null);
   const [percent, setPercent] = useState<number | null>(null);
   const [compacting, setCompacting] = useState(false);
+  const [hovered, setHovered] = useState(false);
 
-  // 从 __hanaState 同步 context 数据
+  // 从 Zustand store 同步 context 数据
+  const storeContextTokens = useStore(s => s.contextTokens);
+  const storeContextWindow = useStore(s => s.contextWindow);
+  const storeContextPercent = useStore(s => s.contextPercent);
+  const storeCompacting = useStore(s => s.compacting);
+
   useEffect(() => {
-    const state = (window as any).__hanaState;
-    const sync = () => {
-      if (state.contextTokens != null) {
-        setTokens(state.contextTokens);
-        setContextWindow(state.contextWindow);
-        setPercent(state.contextPercent);
-      }
-      setCompacting(!!state._compacting);
-    };
-    sync();
-    const id = setInterval(sync, 2000);
-    return () => clearInterval(id);
-  }, [isStreaming]);
+    if (storeContextTokens != null) {
+      setTokens(storeContextTokens);
+      setContextWindow(storeContextWindow);
+      setPercent(storeContextPercent);
+    }
+    setCompacting(storeCompacting);
+  }, [storeContextTokens, storeContextWindow, storeContextPercent, storeCompacting]);
 
   const handleClick = useCallback(() => {
     if (compacting) return;
-    const state = (window as any).__hanaState;
-    if (state.ws?.readyState === WebSocket.OPEN) {
-      state.ws.send(JSON.stringify({ type: 'compact' }));
+    const ws = getWebSocket();
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'compact' }));
     }
   }, [compacting]);
 
@@ -727,29 +749,38 @@ function ContextRing() {
   const windowK = contextWindow != null ? Math.round(contextWindow / 1000) : 0;
 
   return (
-    <button
-      className={`context-ring${compacting ? ' compacting' : ''}`}
-      data-yuan={yuan}
-      title={`${tokensK}k / ${windowK}k tokens (${Math.round(pct)}%)\n点击压缩上下文`}
-      onClick={handleClick}
-      disabled={compacting}
+    <span className="context-ring-wrap"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
-      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-        <circle cx={center} cy={center} r={r} fill="none" stroke="var(--ring-bg)" strokeWidth={sw} />
-        <circle
-          cx={center} cy={center} r={r}
-          fill="none"
-          stroke="var(--ring-fg)"
-          strokeWidth={sw}
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={strokeDashoffset}
-          transform={`rotate(-90 ${center} ${center})`}
-          className="context-ring-progress"
-        />
-      </svg>
-      <span className="context-ring-label">{tokensK}k</span>
-    </button>
+      <button
+        className={`context-ring${compacting ? ' compacting' : ''}`}
+        data-yuan={yuan}
+        onClick={handleClick}
+        disabled={compacting}
+      >
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+          <circle cx={center} cy={center} r={r} fill="none" stroke="var(--ring-bg)" strokeWidth={sw} />
+          <circle
+            cx={center} cy={center} r={r}
+            fill="none"
+            stroke="var(--ring-fg)"
+            strokeWidth={sw}
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={strokeDashoffset}
+            transform={`rotate(-90 ${center} ${center})`}
+            className="context-ring-progress"
+          />
+        </svg>
+      </button>
+      {hovered && (
+        <div className="context-ring-tooltip">
+          <div className="context-ring-tooltip-row">上下文 {windowK}k</div>
+          <div className="context-ring-tooltip-row">已用 {tokensK}k ({Math.round(pct)}%)</div>
+        </div>
+      )}
+    </span>
   );
 }
 
@@ -775,8 +806,8 @@ function ThinkingLevelButton({ level, onChange, modelXhigh }: {
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
   const selectLevel = useCallback(async (next: ThinkingLevel) => {
@@ -845,8 +876,8 @@ function ModelSelector({ models }: { models: Array<{ id: string; name: string; p
     const handler = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
     };
-    document.addEventListener('click', handler);
-    return () => document.removeEventListener('click', handler);
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
   }, [open]);
 
   const switchModel = useCallback(async (modelId: string) => {
@@ -858,9 +889,7 @@ function ModelSelector({ models }: { models: Array<{ id: string; name: string; p
       });
       const favRes = await hanaFetch('/api/models/favorites');
       const favData = await favRes.json();
-      const state = window.__hanaState;
-      state.models = favData.models || [];
-      state.currentModel = favData.current;
+      useStore.setState({ models: favData.models || [] });
     } catch (err) {
       console.error('[model] switch failed:', err);
     }

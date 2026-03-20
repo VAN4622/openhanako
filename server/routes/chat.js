@@ -51,13 +51,9 @@ export default async function chatRoute(app, { engine, hub }) {
       disconnectAbortTimer = null;
       if (activeWsClients > 0) return;
 
-      const currentPath = engine.currentSessionPath;
-      if (!currentPath) return;
-
-      if (engine.isSessionStreaming(currentPath)) {
-        debugLog()?.log("ws", `no clients for ${DISCONNECT_ABORT_GRACE_MS}ms, abort streaming`);
-        engine.abortSessionByPath(currentPath).catch(() => {});
-      }
+      // 中断所有正在 streaming 的 owner session（焦点 + 后台）
+      debugLog()?.log("ws", `no clients for ${DISCONNECT_ABORT_GRACE_MS}ms, aborting all streaming`);
+      engine.abortAllStreaming().catch(() => {});
     }, DISCONNECT_ABORT_GRACE_MS);
   }
 
@@ -115,14 +111,13 @@ export default async function chatRoute(app, { engine, hub }) {
 
   function emitStreamEvent(sessionPath, ss, event) {
     const entry = appendSessionStreamEvent(ss, event);
-    if (sessionPath === engine.currentSessionPath) {
-      broadcast({
-        ...event,
-        sessionPath,
-        streamId: entry.streamId,
-        seq: entry.seq,
-      });
-    }
+    // Phase 4: 始终广播所有事件，前端按 sessionPath 路由到对应 panel
+    broadcast({
+      ...event,
+      sessionPath,
+      streamId: entry.streamId,
+      seq: entry.seq,
+    });
     return entry;
   }
 
@@ -447,15 +442,17 @@ export default async function chatRoute(app, { engine, hub }) {
       if (!msg) return;
 
       if (msg.type === "abort") {
-        if (engine.isStreaming) {
-          try { await hub.abort(); } catch {}
+        const abortPath = msg.sessionPath || engine.currentSessionPath;
+        if (engine.isSessionStreaming(abortPath)) {
+          try { await hub.abort(abortPath); } catch {}
         }
         return;
       }
 
       if (msg.type === "steer" && msg.text) {
         debugLog()?.log("ws", `steer (${msg.text.length} chars)`);
-        if (engine.steer(msg.text)) {
+        const steerPath = msg.sessionPath || engine.currentSessionPath;
+        if (engine.steerSession(steerPath, msg.text)) {
           wsSend(ws, { type: "steered" });
           return;
         }
@@ -576,12 +573,12 @@ export default async function chatRoute(app, { engine, hub }) {
           promptText = "（看图）";
         }
         debugLog()?.log("ws", `user message (${promptText.length} chars, ${msg.images?.length || 0} images)`);
-        // 只检查当前活跃 session 是否在 streaming
-        if (engine.isStreaming) {
+        // Phase 2: 客户端可指定 sessionPath，否则用焦点 session
+        const promptSessionPath = msg.sessionPath || engine.currentSessionPath;
+        if (engine.isSessionStreaming(promptSessionPath)) {
           wsSend(ws, { type: "error", message: t("error.stillStreaming", { name: engine.agentName }) });
           return;
         }
-        const promptSessionPath = engine.currentSessionPath;
         const ss = getState(promptSessionPath);
         try {
           ss.thinkTagParser.reset();
@@ -590,19 +587,14 @@ export default async function chatRoute(app, { engine, hub }) {
           ss.titleRequested = false;
           ss.titlePreview = "";
           beginSessionStream(ss);
-          broadcast({ type: "status", isStreaming: true });
-          await hub.send(promptText, msg.images ? { images: msg.images } : undefined);
-          // prompt 完成时，只有仍在活跃 session 才发 status:false
-          if (engine.currentSessionPath === promptSessionPath) {
-            broadcast({ type: "status", isStreaming: false });
-          }
+          broadcast({ type: "status", isStreaming: true, sessionPath: promptSessionPath });
+          await hub.send(promptText, msg.images ? { images: msg.images, sessionPath: promptSessionPath } : { sessionPath: promptSessionPath });
+          broadcast({ type: "status", isStreaming: false, sessionPath: promptSessionPath });
         } catch (err) {
           if (!err.message?.includes("aborted")) {
             wsSend(ws, { type: "error", message: err.message });
           }
-          if (engine.currentSessionPath === promptSessionPath) {
-            broadcast({ type: "status", isStreaming: false });
-          }
+          broadcast({ type: "status", isStreaming: false, sessionPath: promptSessionPath });
         }
       }
     });

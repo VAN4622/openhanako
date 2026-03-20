@@ -6,24 +6,20 @@
  */
 
 import { Fragment, useCallback, useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaFetch, hanaUrl } from '../hooks/use-hana-fetch';
 import { useI18n } from '../hooks/use-i18n';
 import { formatSessionDate } from '../utils/format';
+import { switchSession, archiveSession } from '../stores/session-actions';
 import type { Session, Agent } from '../types';
+import { yuanFallbackAvatar } from '../utils/agent-helpers';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 // ── 主组件 ──
 
 export function SessionList() {
-  const portalTarget = document.getElementById('sessionList');
-  if (!portalTarget) {
-    console.warn('[SessionList] portal target #sessionList not found');
-    return null;
-  }
-  return createPortal(<SessionListInner />, portalTarget);
+  return <SessionListInner />;
 }
 
 // ── 日期分组 ──
@@ -62,18 +58,6 @@ function groupSessionsByDate(sessions: Session[]): GroupedSessions[] {
     .map(key => ({ key, items: groups[key] }));
 }
 
-// ── Yuan fallback ──
-
-function yuanFallbackAvatar(yuan?: string): string {
-  const t = window.t ?? ((p: string) => p);
-  const types = t('yuan.types') as unknown;
-  if (types && typeof types === 'object') {
-    const entry = (types as Record<string, { avatar?: string }>)[yuan || 'hanako'];
-    return `assets/${entry?.avatar || 'Hanako.png'}`;
-  }
-  return 'assets/Hanako.png';
-}
-
 // ── 内部组件 ──
 
 function SessionListInner() {
@@ -82,6 +66,7 @@ function SessionListInner() {
   const currentSessionPath = useStore(s => s.currentSessionPath);
   const pendingNewSession = useStore(s => s.pendingNewSession);
   const agents = useStore(s => s.agents);
+  const streamingSessions = useStore(s => s.streamingSessions);
 
   const [browserSessions, setBrowserSessions] = useState<Record<string, string>>({});
 
@@ -110,6 +95,7 @@ function SessionListInner() {
               key={s.path}
               session={s}
               isActive={!pendingNewSession && s.path === currentSessionPath}
+              isStreaming={streamingSessions.includes(s.path)}
               agents={agents}
               browserUrl={browserSessions[s.path] || null}
             />
@@ -122,23 +108,22 @@ function SessionListInner() {
 
 // ── Session Item ──
 
-function SessionItem({ session: s, isActive, agents, browserUrl }: {
+function SessionItem({ session: s, isActive, isStreaming, agents, browserUrl }: {
   session: Session;
   isActive: boolean;
+  isStreaming: boolean;
   agents: Agent[];
   browserUrl: string | null;
 }) {
   const { t } = useI18n();
 
   const handleClick = useCallback(() => {
-    const sidebar = (window as any).HanaModules?.sidebar;
-    sidebar?.switchSession(s.path);
+    switchSession(s.path);
   }, [s.path]);
 
   const handleArchive = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
-    const sidebar = (window as any).HanaModules?.sidebar;
-    sidebar?.archiveSession(s.path);
+    archiveSession(s.path);
   }, [s.path]);
 
   // Meta line
@@ -148,7 +133,6 @@ function SessionItem({ session: s, isActive, agents, browserUrl }: {
     const dirName = s.cwd.split('/').filter(Boolean).pop();
     if (dirName) parts.push(dirName);
   }
-  if (s.messageCount) parts.push(t('session.messageCount', { n: s.messageCount }));
   if (s.modified) parts.push(formatSessionDate(s.modified));
 
   return (
@@ -161,6 +145,7 @@ function SessionItem({ session: s, isActive, agents, browserUrl }: {
         {s.agentId && (
           <AgentBadge agentId={s.agentId} agentName={s.agentName} agents={agents} />
         )}
+        {isStreaming && <span className="session-streaming-dot" />}
         <div className="session-item-title">
           {s.title || s.firstMessage || t('session.untitled')}
         </div>
@@ -198,14 +183,13 @@ function AgentBadge({ agentId, agentName, agents }: {
   agentName: string | null;
   agents: Agent[];
 }) {
-  const [src, setSrc] = useState(() =>
-    hanaUrl(`/api/agents/${agentId}/avatar?t=${Date.now()}`),
+  const agent = agents.find(a => a.id === agentId);
+  const [apiUrl] = useState(() =>
+    agent?.hasAvatar ? hanaUrl(`/api/agents/${agentId}/avatar?t=${Date.now()}`) : null,
   );
+  const [errored, setErrored] = useState(false);
 
-  const handleError = useCallback(() => {
-    const agent = agents.find(a => a.id === agentId);
-    setSrc(yuanFallbackAvatar(agent?.yuan));
-  }, [agentId, agents]);
+  const src = (!apiUrl || errored) ? yuanFallbackAvatar(agent?.yuan) : apiUrl;
 
   return (
     <img
@@ -213,7 +197,7 @@ function AgentBadge({ agentId, agentName, agents }: {
       src={src}
       title={agentName || agentId}
       draggable={false}
-      onError={handleError}
+      onError={() => setErrored(true)}
     />
   );
 }

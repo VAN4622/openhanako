@@ -1,12 +1,16 @@
 /**
  * Markdown 渲染器
  *
- * 包装全局 markdown-it 实例。Phase 1 直接复用 app.js 配置好的 window.markdownit，
- * Phase 3 迁移 chat-render 时会把 md 实例收归此处独立管理。
+ * 包装全局 markdown-it 实例（由 lib/markdown-it.min.js 提供 window.markdownit）。
+ * 此处独立创建并管理 md 实例。
  */
+
+import mk from '@traptitech/markdown-it-katex';
+import 'katex/dist/katex.min.css';
 
 interface MarkdownIt {
   render(src: string): string;
+  use(plugin: any, ...args: any[]): MarkdownIt;
   core: { ruler: { after: (name: string, ruleName: string, fn: (state: unknown) => void) => void } };
 }
 
@@ -20,6 +24,7 @@ export function getMd(): MarkdownIt {
     linkify: true,
     typographer: true,
   });
+  _md.use(mk);
   return _md;
 }
 

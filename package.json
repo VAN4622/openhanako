@@ -1,6 +1,6 @@
 {
   "name": "hanako",
-  "version": "0.43.2",
+  "version": "0.48.3",
   "type": "module",
   "description": "Hanako - a personal AI agent with memory and soul",
   "license": "Apache-2.0",
@@ -44,12 +44,14 @@
     "@larksuiteoapi/node-sdk": "^1.59.0",
     "@mariozechner/pi-coding-agent": "^0.56.3",
     "@sinclair/typebox": "^0.34.0",
+    "@traptitech/markdown-it-katex": "^3.6.0",
     "better-sqlite3": "^12.6.2",
     "codemirror": "^6.0.2",
     "duck-duck-scrape": "^2.2.7",
     "exceljs": "^4.4.0",
     "fastify": "^5.2.0",
     "js-yaml": "^4.1.0",
+    "katex": "^0.16.39",
     "mammoth": "^1.11.0",
     "markdown-it": "^14.1.1",
     "node-telegram-bot-api": "^0.67.0",
@@ -93,7 +95,8 @@
     "mac": {
       "target": "dmg",
       "category": "public.app-category.productivity",
-      "icon": "desktop/src/icon.icns"
+      "icon": "desktop/src/icon.icns",
+      "artifactName": "${productName}-${version}-macOS-${arch}.${ext}"
     },
     "dmg": {
       "title": "Hanako",
@@ -119,6 +122,7 @@
     "win": {
       "target": "nsis",
       "icon": "desktop/src/icon.png",
+      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}",
       "requestedExecutionLevel": "asInvoker",
       "extraResources": [
         {

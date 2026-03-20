@@ -2,6 +2,9 @@
  * 纯工具函数，从 modules/utils.js 平移为 TS module
  */
 
+export function toSlash(s: string): string { return s.replace(/\\/g, '/'); }
+export function baseName(s: string): string { return s.replace(/\\/g, '/').split('/').pop() || s; }
+
 export function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;

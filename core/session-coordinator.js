@@ -88,7 +88,8 @@ export class SessionCoordinator {
 
     // 必须在 createAgentSession 前切换 session 级记忆状态，
     // 否则首轮 prompt 会沿用上一个 session 的 system prompt。
-    agent.setMemoryEnabled(memoryEnabled);
+    const creatingAgent = agent;
+    creatingAgent.setMemoryEnabled(memoryEnabled);
 
     const { tools: sessionTools, customTools: sessionCustomTools } = this._d.buildTools(effectiveCwd);
     const resourceLoader = createConversationScopedResourceLoader(this._d.getResourceLoader());
@@ -124,16 +125,25 @@ export class SessionCoordinator {
       }
     }
 
-    // 存入 map
+    // 存入 map（SessionEntry）
     const mapKey = sessionPath || `_anon_${Date.now()}`;
     const old = this._sessions.get(mapKey);
     if (old) old.unsub();
-    this._sessions.set(mapKey, { session, unsub, resourceLoader });
+    this._sessions.set(mapKey, {
+      session,
+      agentId: this._d.getActiveAgentId(),
+      memoryEnabled,
+      lastTouchedAt: Date.now(),
+      unsub,
+      resourceLoader,
+    });
 
-    // 淘汰
+    // LRU 淘汰：按 lastTouchedAt 排序，跳过 streaming 和焦点 session
     if (this._sessions.size > MAX_CACHED_SESSIONS) {
-      for (const [key, entry] of this._sessions) {
-        if (key === mapKey) continue;
+      const candidates = [...this._sessions.entries()]
+        .filter(([key, e]) => key !== mapKey && !e.session.isStreaming)
+        .sort((a, b) => a[1].lastTouchedAt - b[1].lastTouchedAt);
+      for (const [key, entry] of candidates) {
         entry.unsub();
         this._sessions.delete(key);
         if (this._sessions.size <= MAX_CACHED_SESSIONS) break;
@@ -144,10 +154,9 @@ export class SessionCoordinator {
   }
 
   async switchSession(sessionPath) {
-    const agent = this._d.getAgent();
     const targetAgentId = this._d.agentIdFromSessionPath(sessionPath);
     if (targetAgentId && targetAgentId !== this._d.getActiveAgentId()) {
-      await this.closeAllSessions();
+      // Phase 1: 跨 agent 切换只切指针，不清旧 session
       await this._d.switchAgentOnly(targetAgentId);
     }
 
@@ -169,17 +178,27 @@ export class SessionCoordinator {
     if (existing) {
       if (this._session && this._session !== existing.session) {
         const oldSp = this._session.sessionManager?.getSessionFile?.();
-        if (oldSp) await this._d.getAgent()._memoryTicker?.notifySessionEnd(oldSp).catch(() => {});
+        if (oldSp) {
+          const oldEntry = this._sessions.get(oldSp);
+          const oldAgent = oldEntry ? this._d.getAgentById(oldEntry.agentId) : this._d.getAgent();
+          await oldAgent?._memoryTicker?.notifySessionEnd(oldSp).catch(() => {});
+        }
       }
       this._session = existing.session;
-      this._d.getAgent().setMemoryEnabled(memoryEnabled);
+      existing.lastTouchedAt = Date.now();
+      const targetAgent = this._d.getAgentById(existing.agentId) || this._d.getAgent();
+      targetAgent.setMemoryEnabled(memoryEnabled);
       return existing.session;
     }
 
     // 不在 map 中，先 flush 当前再新建
     if (this._session) {
       const oldSp = this._session.sessionManager?.getSessionFile?.();
-      if (oldSp) await this._d.getAgent()._memoryTicker?.notifySessionEnd(oldSp).catch(() => {});
+      if (oldSp) {
+        const oldEntry = this._sessions.get(oldSp);
+        const oldAgent = oldEntry ? this._d.getAgentById(oldEntry.agentId) : this._d.getAgent();
+        await oldAgent?._memoryTicker?.notifySessionEnd(oldSp).catch(() => {});
+      }
     }
     const sessionMgr = SessionManager.open(sessionPath, this._d.getAgent().sessionDir);
     const cwd = sessionMgr.getCwd?.() || undefined;
@@ -189,20 +208,18 @@ export class SessionCoordinator {
   async prompt(text, opts) {
     if (!this._session) throw new Error("没有活跃的 session，请先调用 createSession()");
     this._sessionStarted = true;
+    const sp = this._session.sessionManager?.getSessionFile?.();
+    let entry = null;
+    if (sp) {
+      entry = this._sessions.get(sp);
+      if (entry) entry.lastTouchedAt = Date.now();
+    }
+    const agent = entry ? this._d.getAgentById(entry.agentId) || this._d.getAgent() : this._d.getAgent();
     const promptOpts = opts?.images?.length ? { images: opts.images } : undefined;
-    const sessionPath = this._session.sessionManager?.getSessionFile?.();
-    const promptContext = sessionPath
-      ? await this._d.getAgent().conversationManager?.prepareLocalPromptContext(sessionPath)
+    const promptContext = sp
+      ? await agent.conversationManager?.prepareLocalPromptContext(sp)
       : null;
     const hasSharedContext = Boolean(promptContext?.messageContent || promptContext?.systemPrompt);
-    let entry = sessionPath ? this._sessions.get(sessionPath) : null;
-
-    if (sessionPath && hasSharedContext) {
-      log.log(
-        `shared context pending=${promptContext?.pendingCount || 0} conversation=${promptContext?.conversationId || "?"}`,
-      );
-    }
-
     const beforeCount = Array.isArray(this._session.messages) ? this._session.messages.length : 0;
 
     if (entry?.resourceLoader && hasSharedContext) {
@@ -217,12 +234,13 @@ export class SessionCoordinator {
       }
     }
 
-    const sp = this._session.sessionManager?.getSessionFile?.();
-    if (sp) this._d.getAgent()._memoryTicker?.notifyTurn(sp);
+    if (sp) {
+      agent?._memoryTicker?.notifyTurn(sp);
+    }
 
     if (sp && promptContext?.uptoSeq && hasSharedContext) {
       try {
-        await this._d.getAgent().conversationManager?.markLocalPromptContextSeen(sp, promptContext.uptoSeq);
+        await agent.conversationManager?.markLocalPromptContextSeen(sp, promptContext.uptoSeq);
         log.log(`shared context consumed upto=${promptContext.uptoSeq} session=${path.basename(sp)}`);
       } catch (err) {
         log.warn(`conversation cursor update failed: ${err.message}`);
@@ -234,7 +252,7 @@ export class SessionCoordinator {
       : [];
     if (sp && newMessages.length > 0) {
       try {
-        await this._d.getAgent().conversationManager?.appendLocalSessionMessages(sp, newMessages, {
+        await agent.conversationManager?.appendLocalSessionMessages(sp, newMessages, {
           cwd: this._session.sessionManager?.getCwd?.() || null,
         });
       } catch (err) {
@@ -251,8 +269,89 @@ export class SessionCoordinator {
 
   steer(text) {
     if (!this._session?.isStreaming) return false;
+    const sp = this._session.sessionManager?.getSessionFile?.();
+    if (sp) {
+      const entry = this._sessions.get(sp);
+      if (entry) entry.lastTouchedAt = Date.now();
+    }
     this._session.steer(STEER_PREFIX + text);
     return true;
+  }
+
+  // ── Path 感知 API（Phase 2） ──
+
+  async promptSession(sessionPath, text, opts) {
+    const entry = this._sessions.get(sessionPath);
+    if (!entry) throw new Error(`session "${sessionPath}" 不在缓存中`);
+    entry.lastTouchedAt = Date.now();
+    if (sessionPath === this.currentSessionPath) this._sessionStarted = true;
+    const promptOpts = opts?.images?.length ? { images: opts.images } : undefined;
+    const agent = this._d.getAgentById(entry.agentId) || this._d.getAgent();
+    const promptContext = await agent.conversationManager?.prepareLocalPromptContext(sessionPath);
+    const hasSharedContext = Boolean(promptContext?.messageContent || promptContext?.systemPrompt);
+    const beforeCount = Array.isArray(entry.session.messages) ? entry.session.messages.length : 0;
+
+    if (entry.resourceLoader && hasSharedContext) {
+      entry.resourceLoader.setConversationContext(promptContext);
+    }
+
+    try {
+      await entry.session.prompt(text, promptOpts);
+    } finally {
+      if (entry.resourceLoader && hasSharedContext) {
+        entry.resourceLoader.clearConversationContext();
+      }
+    }
+
+    agent?._memoryTicker?.notifyTurn(sessionPath);
+
+    if (promptContext?.uptoSeq && hasSharedContext) {
+      try {
+        await agent.conversationManager?.markLocalPromptContextSeen(sessionPath, promptContext.uptoSeq);
+      } catch (err) {
+        log.warn(`conversation cursor update failed: ${err.message}`);
+      }
+    }
+
+    const newMessages = Array.isArray(entry.session.messages)
+      ? entry.session.messages.slice(beforeCount)
+      : [];
+    if (newMessages.length > 0) {
+      try {
+        await agent.conversationManager?.appendLocalSessionMessages(sessionPath, newMessages, {
+          cwd: entry.session.sessionManager?.getCwd?.() || null,
+        });
+      } catch (err) {
+        log.warn(`conversation append failed: ${err.message}`);
+      }
+    }
+  }
+
+  steerSession(sessionPath, text) {
+    const entry = this._sessions.get(sessionPath);
+    if (!entry?.session.isStreaming) return false;
+    entry.lastTouchedAt = Date.now();
+    entry.session.steer(STEER_PREFIX + text);
+    return true;
+  }
+
+  async abortSession(sessionPath) {
+    const entry = this._sessions.get(sessionPath);
+    if (!entry?.session.isStreaming) return false;
+    await entry.session.abort();
+    return true;
+  }
+
+  /** 中断所有正在 streaming 的 session */
+  async abortAllStreaming() {
+    const tasks = [];
+    for (const [sp, entry] of this._sessions) {
+      if (entry.session.isStreaming) {
+        tasks.push(entry.session.abort().catch(() => {}));
+      }
+    }
+    await Promise.all(tasks);
+    return tasks.length;
   }
 
   // ── Session 关闭 ──
@@ -272,11 +371,9 @@ export class SessionCoordinator {
   }
 
   async closeAllSessions() {
-    if (this._session) {
-      const curSp = this._session.sessionManager?.getSessionFile?.();
-      if (curSp) this._d.getAgent()?._memoryTicker?.notifySessionEnd(curSp);
-    }
-    for (const [, entry] of this._sessions) {
+    for (const [sp, entry] of this._sessions) {
+      const agent = this._d.getAgentById(entry.agentId) || this._d.getAgent();
+      agent?._memoryTicker?.notifySessionEnd(sp).catch(() => {});
       if (entry.session.isStreaming) {
         try { await entry.session.abort(); } catch {}
       }

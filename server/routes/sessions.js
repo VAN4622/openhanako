@@ -64,8 +64,8 @@ function extractTextContent(content, { stripThink = false } = {}) {
  * engine.messages 可能只是当前上下文窗口，切回页面时会导致旧消息缺失。
  * 读文件失败时再退回内存态，避免历史接口直接空白。
  */
-async function loadSessionHistoryMessages(engine) {
-  const sessionPath = engine.currentSessionPath;
+async function loadSessionHistoryMessages(engine, explicitPath) {
+  const sessionPath = explicitPath || engine.currentSessionPath;
   if (sessionPath) {
     try {
       const raw = await fs.readFile(sessionPath, "utf-8");
@@ -124,24 +124,36 @@ export default async function sessionsRoute(app, { engine }) {
     }
   });
 
-  // 获取当前 session 的消息
+  // 获取 session 的消息（支持 ?path= 指定 session，否则读焦点 session）
   app.get("/api/sessions/messages", async (req, reply) => {
     try {
-      const sourceMessages = await loadSessionHistoryMessages(engine);
+      const queryPath = req.query?.path || null;
+      if (queryPath && !isValidSessionPath(queryPath, engine.agentsDir)) {
+        reply.code(403);
+        return { error: "Invalid session path" };
+      }
+      const sourceMessages = await loadSessionHistoryMessages(engine, queryPath);
+
+      // 分页参数
+      const beforeId = req.query?.before != null ? Number(req.query.before) : null;
+      const limit = Math.min(Number(req.query?.limit) || 50, 200);
 
       // 提取可显示的消息（user/assistant 文本 + 文件/artifact 工具结果）
-      const messages = [];
-      const fileOutputs = [];   // { afterIndex, files: [{ filePath, label, ext }] }
-      const artifacts = [];     // { afterIndex, artifactType, title, content, language }
+      // 每条消息带稳定 id（原始 sourceMessages 索引）
+      const allMessages = [];
+      const fileOutputs = [];
+      const artifacts = [];
+      let globalIdx = 0;
 
       for (const m of sourceMessages) {
         if (m.role === "user") {
           const { text } = extractTextContent(m.content);
-          if (text) messages.push({ role: "user", content: text });
+          if (text) allMessages.push({ id: String(globalIdx++), role: "user", content: text });
         } else if (m.role === "assistant") {
           const { text, thinking, toolUses } = extractTextContent(m.content, { stripThink: true });
           if (text || toolUses.length) {
-            messages.push({
+            allMessages.push({
+              id: String(globalIdx++),
               role: "assistant",
               content: text,
               thinking: thinking || undefined,
@@ -151,10 +163,10 @@ export default async function sessionsRoute(app, { engine }) {
         } else if (m.role === "toolResult") {
           const d = m.details || {};
           if (m.toolName === "present_files" && d.files?.length) {
-            fileOutputs.push({ afterIndex: messages.length - 1, files: d.files });
+            fileOutputs.push({ afterIndex: allMessages.length - 1, files: d.files });
           } else if (m.toolName === "create_artifact" && d.content) {
             artifacts.push({
-              afterIndex: messages.length - 1,
+              afterIndex: allMessages.length - 1,
               artifactId: d.artifactId,
               artifactType: d.type,
               title: d.title,
@@ -165,7 +177,30 @@ export default async function sessionsRoute(app, { engine }) {
         }
       }
 
-      // 从历史中提取最新 todo 状态（倒序找最后一条 todo toolResult）
+      // 分页：只在有 before 参数时切片，否则返回全量
+      let messages;
+      let hasMore = false;
+      let slicedFileOutputs = fileOutputs;
+      let slicedArtifacts = artifacts;
+
+      if (beforeId != null && beforeId > 0) {
+        const endIdx = Math.min(beforeId, allMessages.length);
+        const startIdx = Math.max(0, endIdx - limit);
+        messages = allMessages.slice(startIdx, endIdx);
+        hasMore = startIdx > 0;
+        // 重映射 afterIndex 到切片内偏移，过滤超出范围的
+        slicedFileOutputs = fileOutputs
+          .filter(fo => fo.afterIndex >= startIdx && fo.afterIndex < endIdx)
+          .map(fo => ({ ...fo, afterIndex: fo.afterIndex - startIdx }));
+        slicedArtifacts = artifacts
+          .filter(a => a.afterIndex >= startIdx && a.afterIndex < endIdx)
+          .map(a => ({ ...a, afterIndex: a.afterIndex - startIdx }));
+      } else {
+        // 默认返回全量，不截断
+        messages = allMessages;
+      }
+
+      // 从历史中提取最新 todo 状态
       let todos = null;
       for (let i = sourceMessages.length - 1; i >= 0; i--) {
         const m = sourceMessages[i];
@@ -175,7 +210,7 @@ export default async function sessionsRoute(app, { engine }) {
         }
       }
 
-      return { messages, todos, fileOutputs, artifacts };
+      return { messages, todos, fileOutputs: slicedFileOutputs, artifacts: slicedArtifacts, hasMore };
     } catch (err) {
       reply.code(500);
       return { error: err.message };

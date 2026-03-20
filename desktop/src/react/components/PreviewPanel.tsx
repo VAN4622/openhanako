@@ -11,11 +11,11 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { renderMarkdown } from '../utils/markdown';
 import { parseCSV, injectCopyButtons } from '../utils/format';
 import { fileIconSvg } from '../utils/icons';
+import { updateLayout } from './SidebarLayout';
 import { ArtifactEditor } from './ArtifactEditor';
 import type { Artifact } from '../types';
 
@@ -47,9 +47,7 @@ export function PreviewPanel() {
   const closePreview = useCallback(() => {
     setPreviewOpen(false);
     setCurrentArtifactId(null);
-    const sidebar = (window as unknown as Record<string, unknown>).HanaModules as Record<string, unknown> | undefined;
-    const sidebarMod = sidebar?.sidebar as { updateLayout?: () => void } | undefined;
-    sidebarMod?.updateLayout?.();
+    updateLayout();
   }, [setPreviewOpen, setCurrentArtifactId]);
 
   // 拆分到独立窗口
@@ -224,13 +222,7 @@ export function PreviewPanel() {
     });
   }, [artifact]);
 
-  const portalTarget = document.getElementById('previewPortal');
-  if (!portalTarget) {
-    console.warn('[PreviewPanel] portal target #previewPortal not found');
-    return null;
-  }
-
-  return createPortal(
+  return (
     <div className={`preview-panel${previewOpen ? '' : ' collapsed'}`} id="previewPanel">
       <div className="resize-handle resize-handle-left" id="previewResizeHandle"></div>
       <div className="preview-panel-inner">
@@ -274,7 +266,6 @@ export function PreviewPanel() {
           )}
         </div>
       </div>
-    </div>,
-    portalTarget,
+    </div>
   );
 }

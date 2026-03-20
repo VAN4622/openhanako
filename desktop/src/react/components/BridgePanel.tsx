@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createPortal } from 'react-dom';
 import { useStore } from '../stores';
 import { hanaFetch } from '../hooks/use-hana-fetch';
 import { formatSessionDate, parseMoodFromContent } from '../utils/format';
@@ -86,15 +85,10 @@ export function BridgePanel() {
   const [isResettingConversation, setIsResettingConversation] = useState(false);
   const [linkError, setLinkError] = useState('');
 
-  const containerRef = useRef<Element | null>(null);
   const messagesRef = useRef<HTMLDivElement>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const currentKeyRef = useRef(currentKey);
   currentKeyRef.current = currentKey;
-
-  useEffect(() => {
-    containerRef.current = document.querySelector('.main-content');
-  }, []);
 
   const currentBridgeSession = sessions.find(s => s.sessionKey === currentKey) || null;
   const currentLocalSession = localSessions.find(s => s.path === currentSessionPath) || null;
@@ -322,7 +316,7 @@ export function BridgePanel() {
 
   const close = useCallback(() => setActivePanel(null), [setActivePanel]);
 
-  if (activePanel !== 'bridge' || !containerRef.current) return null;
+  if (activePanel !== 'bridge') return null;
 
   const t = window.t ?? ((p: string) => p);
   const sharedConversation =
@@ -337,7 +331,7 @@ export function BridgePanel() {
   const waStatus = statusData.whatsapp?.status;
   const qqStatus = statusData.qq?.status;
 
-  return createPortal(
+  return (
     <div className={`floating-panel bridge-panel-wide${panelClosing ? ' closing' : ''}`} id="bridgePanel">
       <div className="floating-panel-inner">
         <div className="floating-panel-header">
@@ -631,8 +625,7 @@ export function BridgePanel() {
           </div>
         </div>
       </div>
-    </div>,
-    containerRef.current,
+    </div>
   );
 }
 

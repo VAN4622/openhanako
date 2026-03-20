@@ -103,8 +103,9 @@ export class Hub {
       to,
       onDelta,
       images,
+      sessionPath,
     } = opts;
-    const o = { sessionKey, role, ephemeral, meta, isGroup, cwd, model, persist, from, to, onDelta, images };
+    const o = { sessionKey, role, ephemeral, meta, isGroup, cwd, model, persist, from, to, onDelta, images, sessionPath };
 
     // 路由表：按顺序匹配，第一条命中即执行。
     // 优先级通过位置保证，新增路由在此处显式插入，不依赖散落在各处的 if 顺序。
@@ -115,7 +116,9 @@ export class Hub {
       },
       { // 桌面端 owner
         match: o => !o.sessionKey && !o.ephemeral && o.role === "owner",
-        handle: () => this._engine.prompt(text, { images: o.images }),
+        handle: () => o.sessionPath
+          ? this._engine.promptSession(o.sessionPath, text, { images: o.images })
+          : this._engine.prompt(text, { images: o.images }),
       },
       { // Bridge guest
         match: o => o.sessionKey && o.role === "guest",
@@ -138,10 +141,12 @@ export class Hub {
   }
 
   /**
-   * 中断当前生成
+   * 中断生成（支持指定 session）
    */
-  async abort() {
-    return this._engine.abort();
+  async abort(sessionPath) {
+    return sessionPath
+      ? this._engine.abortSession(sessionPath)
+      : this._engine.abort();
   }
 
   // ──────────── 调度器管理 ────────────

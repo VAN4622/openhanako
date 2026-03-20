@@ -56,7 +56,8 @@ export default async function skillsRoute(app, { engine }) {
 
   app.get("/api/skills", async (req, reply) => {
     try {
-      return { skills: engine.getAllSkills() };
+      const { agentId } = req.query;
+      return { skills: engine.getAllSkills(agentId || undefined) };
     } catch (err) {
       reply.code(500);
       return { error: err.message };
