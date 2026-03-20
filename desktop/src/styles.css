@@ -11305,6 +11305,108 @@ body.resizing .preview-panel-inner {
     opacity: 0.85;
 }
 
+.remote-dir-picker {
+    width: 560px;
+    max-width: min(92vw, 560px);
+}
+
+.remote-dir-picker-roots {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+}
+
+.remote-dir-root-btn,
+.remote-dir-entry-open {
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
+    color: var(--text);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    font: inherit;
+}
+
+.remote-dir-root-btn {
+    padding: 6px 10px;
+}
+
+.remote-dir-root-btn.active {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-secondary));
+    border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+}
+
+.remote-dir-picker-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 14px;
+}
+
+.remote-dir-current-path {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 10px;
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    font-size: 0.76rem;
+    overflow-x: auto;
+    white-space: nowrap;
+}
+
+.remote-dir-picker-list {
+    margin-top: 14px;
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    background: var(--bg-secondary);
+}
+
+.remote-dir-placeholder,
+.remote-dir-error {
+    padding: 16px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}
+
+.remote-dir-error {
+    color: var(--danger);
+}
+
+.remote-dir-entry {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border-soft);
+}
+
+.remote-dir-entry:last-child {
+    border-bottom: none;
+}
+
+.remote-dir-entry-open {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+}
+
+.remote-dir-entry-icon {
+    color: var(--text-muted);
+    display: inline-flex;
+}
+
+.remote-dir-entry-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* ========================================
    Scroll to bottom FAB
    ======================================== */

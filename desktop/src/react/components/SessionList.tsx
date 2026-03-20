@@ -189,7 +189,7 @@ function AgentBadge({ agentId, agentName, agents }: {
   );
   const [errored, setErrored] = useState(false);
 
-  const src = (!apiUrl || errored) ? yuanFallbackAvatar(agent?.yuan) : apiUrl;
+  const src = (!apiUrl || errored) ? yuanFallbackAvatar(agent?.yuan || 'hanako') : apiUrl;
 
   return (
     <img

@@ -18,6 +18,7 @@ import { fileIconSvg } from '../utils/icons';
 import { updateLayout } from './SidebarLayout';
 import { ArtifactEditor } from './ArtifactEditor';
 import type { Artifact } from '../types';
+import { openWorkspaceFile } from '../utils/remote-files';
 
 const EDITABLE_TYPES = new Set(['markdown', 'code', 'csv']);
 
@@ -191,7 +192,7 @@ export function PreviewPanel() {
         openBtn.className = 'preview-file-open-btn';
         openBtn.textContent = _t('desk.openWithDefault');
         openBtn.addEventListener('click', () => {
-          if (artifact.filePath) window.platform?.openFile?.(artifact.filePath);
+          if (artifact.filePath) void openWorkspaceFile(artifact.filePath, artifact.title);
         });
         wrap.appendChild(iconEl);
         wrap.appendChild(nameEl);

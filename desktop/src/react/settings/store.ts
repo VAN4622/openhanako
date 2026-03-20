@@ -38,10 +38,19 @@ export interface ProviderSummary {
   can_delete: boolean;
 }
 
+export interface GatewayConfig {
+  mode: 'local' | 'remote';
+  baseUrl: string;
+  token: string;
+}
+
 export interface SettingsState {
   // connection
-  serverPort: number | null;
+  serverPort: string | null;
+  serverBaseUrl: string | null;
   serverToken: string | null;
+  serverMode: 'local' | 'remote' | 'web' | null;
+  gatewayConfig: GatewayConfig;
 
   // agents
   agents: Agent[];
@@ -95,7 +104,14 @@ let _toastTimer: ReturnType<typeof setTimeout> | null = null;
 export const useSettingsStore = create<SettingsStore>()((set, get) => ({
   // connection
   serverPort: null,
+  serverBaseUrl: null,
   serverToken: null,
+  serverMode: null,
+  gatewayConfig: {
+    mode: 'local',
+    baseUrl: '',
+    token: '',
+  },
 
   // agents
   agents: [],

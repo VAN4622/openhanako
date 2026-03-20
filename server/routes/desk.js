@@ -12,6 +12,8 @@ import os from "os";
 import { execSync } from "child_process";
 import { parseSkillMetadata } from "../../lib/skills/skill-metadata.js";
 
+const MAX_INLINE_UPLOAD_BYTES = 20 * 1024 * 1024;
+
 /** 解析真实路径（跟踪 symlink），失败返回 null */
 function realPath(p) {
   try { return fs.realpathSync(path.resolve(p)); }
@@ -81,6 +83,27 @@ function listWorkspaceFiles(dir) {
       };
     })
     .sort((a, b) => new Date(b.mtime) - new Date(a.mtime));
+}
+
+function writeWorkspaceUpload(dir, file) {
+  const rawName = typeof file?.name === "string" ? file.name.trim() : "";
+  const data = typeof file?.data === "string" ? file.data.trim() : "";
+  if (!rawName || !data) {
+    throw new Error("name and data required");
+  }
+
+  const name = path.basename(rawName);
+  const buf = Buffer.from(data, "base64");
+  if (!buf.length) {
+    throw new Error("Uploaded file is empty");
+  }
+  if (buf.length > MAX_INLINE_UPLOAD_BYTES) {
+    throw new Error(`Uploaded file exceeds ${MAX_INLINE_UPLOAD_BYTES} bytes`);
+  }
+
+  const dest = path.join(dir, name);
+  fs.writeFileSync(dest, buf);
+  return { src: rawName, name };
 }
 
 export default async function deskRoute(app, { engine, hub }) {
@@ -488,7 +511,7 @@ export default async function deskRoute(app, { engine, hub }) {
     if (req.body?.dir && !isApprovedDir(baseDir, engine)) return { error: "目录不在允许范围内" };
     fs.mkdirSync(baseDir, { recursive: true });
 
-    const { action, subdir: sub, paths, name, content, oldName, newName } = req.body || {};
+    const { action, subdir: sub, paths, files, name, content, oldName, newName } = req.body || {};
 
     // 解析子目录
     const subdirStr = sub || "";
@@ -500,31 +523,44 @@ export default async function deskRoute(app, { engine, hub }) {
 
     switch (action) {
       case "upload": {
-        if (!Array.isArray(paths) || paths.length === 0) {
-          return { error: "paths required" };
+        const hasPaths = Array.isArray(paths) && paths.length > 0;
+        const hasFiles = Array.isArray(files) && files.length > 0;
+        if (!hasPaths && !hasFiles) {
+          return { error: "paths or files required" };
         }
         const results = [];
-        for (const srcPath of paths) {
-          try {
-            if (!path.isAbsolute(srcPath) || !fs.existsSync(srcPath)) {
-              results.push({ src: srcPath, error: "invalid path" });
-              continue;
+        if (hasPaths) {
+          for (const srcPath of paths) {
+            try {
+              if (!path.isAbsolute(srcPath) || !fs.existsSync(srcPath)) {
+                results.push({ src: srcPath, error: "invalid path" });
+                continue;
+              }
+              if (isSensitivePath(srcPath, engine.hanakoHome)) {
+                results.push({ src: srcPath, error: "sensitive path blocked" });
+                continue;
+              }
+              const fname = path.basename(srcPath);
+              const dest = path.join(dir, fname);
+              const stat = fs.statSync(srcPath);
+              if (stat.isDirectory()) {
+                fs.cpSync(srcPath, dest, { recursive: true });
+              } else {
+                fs.copyFileSync(srcPath, dest);
+              }
+              results.push({ src: srcPath, name: fname });
+            } catch (err) {
+              results.push({ src: srcPath, error: err.message });
             }
-            if (isSensitivePath(srcPath, engine.hanakoHome)) {
-              results.push({ src: srcPath, error: "sensitive path blocked" });
-              continue;
+          }
+        }
+        if (hasFiles) {
+          for (const file of files) {
+            try {
+              results.push(writeWorkspaceUpload(dir, file));
+            } catch (err) {
+              results.push({ src: file?.name || null, error: err.message });
             }
-            const fname = path.basename(srcPath);
-            const dest = path.join(dir, fname);
-            const stat = fs.statSync(srcPath);
-            if (stat.isDirectory()) {
-              fs.cpSync(srcPath, dest, { recursive: true });
-            } else {
-              fs.copyFileSync(srcPath, dest);
-            }
-            results.push({ src: srcPath, name: fname });
-          } catch (err) {
-            results.push({ src: srcPath, error: err.message });
           }
         }
         return { ok: true, results, files: listWorkspaceFiles(dir) };

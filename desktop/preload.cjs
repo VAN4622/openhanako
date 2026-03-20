@@ -14,7 +14,12 @@ function resolveTheme() {
 
 contextBridge.exposeInMainWorld("hana", {
   getServerPort: () => ipcRenderer.invoke("get-server-port"),
+  getServerBaseUrl: () => ipcRenderer.invoke("get-server-base-url"),
   getServerToken: () => ipcRenderer.invoke("get-server-token"),
+  getServerMode: () => ipcRenderer.invoke("get-server-mode"),
+  getGatewayConfig: () => ipcRenderer.invoke("get-gateway-config"),
+  saveGatewayConfig: (config) => ipcRenderer.invoke("save-gateway-config", config),
+  verifyGatewayConfig: (config) => ipcRenderer.invoke("verify-gateway-config", config),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
   checkUpdate: () => ipcRenderer.invoke("check-update"),
   appReady: () => ipcRenderer.invoke("app-ready"),
@@ -30,6 +35,8 @@ contextBridge.exposeInMainWorld("hana", {
   unwatchFile: (filePath) => ipcRenderer.invoke("unwatch-file", filePath),
   onFileChanged: (cb) => ipcRenderer.on("file-changed", (_, filePath) => cb(filePath)),
   readFileBase64: (path) => ipcRenderer.invoke("read-file-base64", path),
+  getPathInfo: (path) => ipcRenderer.invoke("get-path-info", path),
+  saveTempBase64File: (fileName, base64Data) => ipcRenderer.invoke("save-temp-base64-file", fileName, base64Data),
   readDocxHtml: (path) => ipcRenderer.invoke("read-docx-html", path),
   readXlsxHtml: (path) => ipcRenderer.invoke("read-xlsx-html", path),
   getFilePath: (file) => webUtils.getPathForFile(file),

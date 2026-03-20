@@ -38,6 +38,7 @@ import dmRoute from "./routes/dm.js";
 import fsRoute from "./routes/fs.js";
 import preferencesRoute from "./routes/preferences.js";
 import bridgeRoute from "./routes/bridge.js";
+import browserBridgeRoute from "./routes/browser-bridge.js";
 import conversationsRoute from "./routes/conversations.js";
 import authRoute from "./routes/auth.js";
 import diaryRoute from "./routes/diary.js";
@@ -165,6 +166,7 @@ app.register(dmRoute, { engine });
 app.register(fsRoute, { engine });
 app.register(preferencesRoute, { engine });
 app.register(bridgeRoute, { engine, bridgeManager });
+app.register(browserBridgeRoute, { engine });
 app.register(conversationsRoute, { engine });
 app.register(authRoute, { engine });
 app.register(diaryRoute, { engine });
@@ -218,7 +220,7 @@ app.post("/api/shutdown", async () => {
 
 // ── 启动服务器 ──
 const port = parseInt(process.env.HANA_PORT) || 0; // 0 = OS 分配
-const host = "127.0.0.1";
+const host = process.env.HANA_HOST || "127.0.0.1";
 
 try {
   await app.listen({ port, host });

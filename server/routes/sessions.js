@@ -102,6 +102,20 @@ function isValidSessionPath(sessionPath, baseDir) {
   return resolved.startsWith(base + path.sep) || resolved === base;
 }
 
+function looksLikeWindowsPath(value) {
+  return /^[a-zA-Z]:[\\/]/.test(value) || /^\\\\/.test(value);
+}
+
+function normalizeSessionCwd(cwd) {
+  if (typeof cwd !== "string") return undefined;
+  const trimmed = cwd.trim();
+  if (!trimmed) return undefined;
+  if (process.platform !== "win32" && looksLikeWindowsPath(trimmed)) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 export default async function sessionsRoute(app, { engine }) {
 
   // 列出所有 agent 的历史 session
@@ -221,9 +235,13 @@ export default async function sessionsRoute(app, { engine }) {
   app.post("/api/sessions/new", async (req, reply) => {
     try {
       const { cwd, memoryEnabled, agentId } = req.body || {};
+      const sessionCwd = normalizeSessionCwd(cwd);
+      if (cwd && !sessionCwd) {
+        console.warn(`[sessions] ignoring incompatible cwd for ${process.platform}: ${cwd}`);
+      }
       const memFlag = memoryEnabled !== false; // 默认 true
       console.log("[sessions] 新建 session", {
-        hasCwd: !!cwd,
+        hasCwd: !!sessionCwd,
         memoryEnabled: memFlag,
         customAgent: !!agentId,
       });
@@ -233,20 +251,20 @@ export default async function sessionsRoute(app, { engine }) {
       if (bm.isRunning) await bm.suspendForSession(engine.currentSessionPath);
 
       if (agentId && agentId !== engine.currentAgentId) {
-        await engine.createSessionForAgent(agentId, cwd || undefined, memFlag);
+        await engine.createSessionForAgent(agentId, sessionCwd, memFlag);
       } else {
-        await engine.createSession(null, cwd || undefined, memFlag);
+        await engine.createSession(null, sessionCwd, memFlag);
       }
       engine.persistMemoryEnabled();
 
       // 记住工作目录 + 更新历史
-      if (cwd) {
+      if (sessionCwd) {
         const history = Array.isArray(engine.config.cwd_history)
-          ? engine.config.cwd_history.filter(p => p !== cwd)
+          ? engine.config.cwd_history.filter(p => p !== sessionCwd)
           : [];
-        history.unshift(cwd);
+        history.unshift(sessionCwd);
         if (history.length > 10) history.length = 10;  // 保留最近 10 条
-        await engine.updateConfig({ last_cwd: cwd, cwd_history: history });
+        await engine.updateConfig({ last_cwd: sessionCwd, cwd_history: history });
       }
 
       console.log("[sessions] session 创建完成");

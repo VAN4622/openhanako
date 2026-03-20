@@ -18,7 +18,6 @@ import {
   deskFullPath,
   deskCurrentDir,
   deskMoveFiles,
-  deskUploadFiles,
   deskCreateFile,
   deskRemoveFile,
   deskMkdir,
@@ -26,6 +25,9 @@ import {
   saveJianContent,
 } from '../stores/desk-actions';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
+import { copyWorkspacePath, openWorkspaceFile, revealWorkspaceDirectory } from '../utils/remote-files';
+import { formatUploadRejection, uploadDeskFiles as uploadDeskItems } from '../utils/upload-files';
+import { showToast } from '../utils/toast';
 
 // ── SVG 图标 ──
 
@@ -96,7 +98,8 @@ function DeskOpenButton() {
     const target = s.deskCurrentPath
       ? s.deskBasePath + '/' + s.deskCurrentPath
       : s.deskBasePath;
-    window.platform?.showInFinder?.(target);
+    const label = target.replace(/\\/g, '/').split('/').pop() || target;
+    revealWorkspaceDirectory(target, label);
   }, []);
 
   return (
@@ -231,12 +234,18 @@ async function handleExternalDropToFolder(
 
   if (externalPaths.length > 0) {
     const subdir = curPath ? curPath + '/' + folderName : folderName;
-    await hanaFetch('/api/desk/files', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'upload', dir: basePath || undefined, subdir, paths: externalPaths }),
-    });
-    loadDeskFiles(curPath || '');
+    const data = await uploadDeskItems(
+      externalPaths.map((filePath) => ({ path: filePath })),
+      { dir: basePath || undefined, subdir },
+    );
+    if (data.files) {
+      useStore.getState().setDeskFiles(data.files);
+    } else {
+      loadDeskFiles(curPath || '');
+    }
+    for (const rejection of data.rejected) {
+      showToast(formatUploadRejection(rejection), 'error', 6000);
+    }
   }
 }
 
@@ -283,6 +292,10 @@ function DeskFileItem({
 
   const handleDragStart = useCallback((e: React.DragEvent) => {
     e.preventDefault();
+    if (useStore.getState().serverMode === 'remote') {
+      showToast('远程模式暂不支持直接拖出服务器文件', 'error', 5000);
+      return;
+    }
     const filesToDrag = selected ? allSelectedFiles : [file.name];
     _deskDragNames = filesToDrag;
     const clearDrag = () => { _deskDragNames = null; };
@@ -325,13 +338,31 @@ function DeskFileItem({
     if (file.isDir) {
       const sub = s.deskCurrentPath ? s.deskCurrentPath + '/' + file.name : file.name;
       items.push({ label: tFn('desk.ctx.open'), action: () => loadDeskFiles(sub) });
-      items.push({ label: tFn('desk.ctx.openInFinder'), action: () => { const p = deskFullPath(file.name); if (p) window.platform?.showInFinder?.(p); } });
+      items.push({
+        label: tFn('desk.ctx.openInFinder'),
+        action: () => {
+          const p = deskFullPath(file.name);
+          if (p) revealWorkspaceDirectory(p, file.name);
+        },
+      });
     } else {
-      items.push({ label: tFn('desk.ctx.open'), action: () => { const p = deskFullPath(file.name); if (p) window.platform?.openFile?.(p); } });
+      items.push({
+        label: tFn('desk.ctx.open'),
+        action: () => {
+          const p = deskFullPath(file.name);
+          if (p) void openWorkspaceFile(p, file.name);
+        },
+      });
     }
     if (!bulkNames) {
       items.push({ label: tFn('desk.ctx.rename'), action: () => onRenameStart(file.name) });
-      items.push({ label: tFn('desk.ctx.copyPath'), action: () => { const p = deskFullPath(file.name); if (p) navigator.clipboard.writeText(p).catch(() => {}); } });
+      items.push({
+        label: tFn('desk.ctx.copyPath'),
+        action: () => {
+          const p = deskFullPath(file.name);
+          if (p) copyWorkspacePath(p);
+        },
+      });
     }
     items.push({ divider: true });
     const deleteLabel = bulkNames ? tFn('desk.ctx.deleteN', { n: bulkNames.length }) : tFn('desk.ctx.delete');
@@ -572,7 +603,13 @@ function DeskFileList({ sortMode, onShowMenu }: { sortMode: SortMode; onShowMenu
             setTimeout(() => handleRenameStart(name), 50);
           }
         } },
-        { label: tFn('desk.ctx.openInFinder'), action: () => { const p = deskCurrentDir(); if (p) window.platform?.showInFinder?.(p); } },
+        {
+          label: tFn('desk.ctx.openInFinder'),
+          action: () => {
+            const p = deskCurrentDir();
+            if (p) revealWorkspaceDirectory(p, p.replace(/\\/g, '/').split('/').pop() || p);
+          },
+        },
       ],
     });
   }, [onShowMenu, handleRenameStart]);
@@ -709,7 +746,13 @@ function DeskDropZone({ children, onShowMenu }: { children: React.ReactNode; onS
       items: [
         { label: tFn('desk.ctx.newMdFile'), action: () => deskCreateFile('') },
         { label: tFn('desk.ctx.newFolder'), action: () => deskMkdir() },
-        { label: tFn('desk.ctx.openInFinder'), action: () => { const p = deskCurrentDir(); if (p) window.platform?.showInFinder?.(p); } },
+        {
+          label: tFn('desk.ctx.openInFinder'),
+          action: () => {
+            const p = deskCurrentDir();
+            if (p) revealWorkspaceDirectory(p, p.replace(/\\/g, '/').split('/').pop() || p);
+          },
+        },
       ],
     });
   }, [onShowMenu]);
@@ -732,7 +775,19 @@ function DeskDropZone({ children, onShowMenu }: { children: React.ReactNode; onS
         if (p) paths.push(p);
       }
       if (paths.length > 0) {
-        await deskUploadFiles(paths);
+        const data = await uploadDeskItems(
+          paths.map((filePath) => ({ path: filePath })),
+          {
+            dir: useStore.getState().deskBasePath || undefined,
+            subdir: useStore.getState().deskCurrentPath || '',
+          },
+        );
+        if (data.files) {
+          useStore.getState().setDeskFiles(data.files);
+        }
+        for (const rejection of data.rejected) {
+          showToast(formatUploadRejection(rejection), 'error', 6000);
+        }
       }
     } else if (text) {
       await deskCreateFile(text);
@@ -966,7 +1021,7 @@ function DeskCwdSkillsPanel() {
           <div className="desk-cwd-ctx-menu" style={{ position: 'fixed', left: cmPos.x, top: cmPos.y, zIndex: 9999 }}>
             <button onClick={() => {
               const target = cmSkill?.baseDir || (useStore.getState().deskBasePath + '/.agents/skills');
-              (window as any).platform?.showInFinder?.(target);
+              revealWorkspaceDirectory(target, target.replace(/\\/g, '/').split('/').pop() || target);
               setCmPos(null);
             }}>
               {t('desk.openInFinder')}

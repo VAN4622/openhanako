@@ -13,6 +13,7 @@ import { useI18n } from '../hooks/use-i18n';
 import { ensureSession, loadSessions } from '../stores/session-actions';
 import { getWebSocket } from '../services/websocket';
 import { SVG_ICONS } from '../utils/icons';
+import { formatUploadRejection, uploadChatFiles } from '../utils/upload-files';
 import type { ThinkingLevel } from '../stores/model-slice';
 
 // ── Toast 通知 ──
@@ -360,10 +361,31 @@ function InputAreaInner() {
 
       let finalText = text;
       if (otherFiles.length > 0) {
-        const fileBlock = otherFiles
-          .map(f => f.isDirectory ? `[目录] ${f.path}` : `[附件] ${f.path}`)
-          .join('\n');
-        finalText = text ? `${text}\n\n${fileBlock}` : fileBlock;
+        const { uploads, rejected } = await uploadChatFiles(otherFiles.map((file) => ({
+          path: file.path,
+          name: file.name,
+        })));
+
+        const stagedPaths = uploads
+          .filter((item) => !item.error && item.dest)
+          .map((item) => item.dest);
+        const failedUploads = uploads
+          .filter((item) => item.error && item.name)
+          .map((item) => `无法上传附件: ${item.name}`);
+
+        for (const rejection of rejected) {
+          showToast(formatUploadRejection(rejection), 'error', 6000);
+        }
+        for (const message of failedUploads) {
+          showToast(message, 'error', 6000);
+        }
+
+        if (stagedPaths.length > 0) {
+          const fileBlock = stagedPaths
+            .map((filePath) => `[附件] ${filePath}`)
+            .join('\n');
+          finalText = text ? `${text}\n\n${fileBlock}` : fileBlock;
+        }
       }
 
       // 图片文件读 base64 编码
@@ -400,6 +422,11 @@ function InputAreaInner() {
 
       if (docContextAttached) {
         setDocContextAttached(false);
+      }
+
+      if (!finalText.trim() && images.length === 0) {
+        showToast('没有可发送的内容', 'error', 5000);
+        return;
       }
 
       const filesToRender = hasFiles ? [...attachedFiles] : null;

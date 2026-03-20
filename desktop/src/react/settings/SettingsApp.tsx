@@ -90,8 +90,11 @@ async function initSettings() {
   const store = useSettingsStore.getState();
   try {
     const serverPort = await platform.getServerPort();
+    const serverBaseUrl = await platform.getServerBaseUrl?.() || (serverPort ? `http://127.0.0.1:${serverPort}` : null);
     const serverToken = await platform.getServerToken();
-    store.set({ serverPort, serverToken });
+    const serverMode = await platform.getServerMode?.() || (serverBaseUrl ? 'local' : null);
+    const gatewayConfig = await platform.getGatewayConfig?.() || { mode: 'local', baseUrl: '', token: '' };
+    store.set({ serverPort, serverBaseUrl, serverToken, serverMode, gatewayConfig });
 
     // i18n
     const i18n = (window as any).i18n;

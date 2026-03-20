@@ -13,6 +13,7 @@ const os = require("os");
 const path = require("path");
 const { fork, execFileSync } = require("child_process");
 const fs = require("fs");
+const WebSocket = require("ws");
 
 // macOS/Linux: Electron 从 Dock/Finder 启动时 PATH 只有系统默认值，
 // Homebrew、npm global 等路径全部丢失。用登录 shell 解析完整 PATH。
@@ -64,6 +65,11 @@ const TITLEBAR_HEIGHT = 44;        // 浏览器窗口标题栏高度（px）
 let serverProcess = null;
 let serverPort = null;
 let serverToken = null;
+let serverBaseUrl = null;
+let serverMode = "local";
+let gatewayFallbackError = null;
+let browserBridgeSocket = null;
+let browserBridgeReconnectTimer = null;
 let isQuitting = false;  // 区分关窗口（hide）和真正退出（quit）
 let tray = null;
 let reusedServerPid = null; // 复用已有 server 时记录其 PID，退出时发 SIGTERM
@@ -153,11 +159,154 @@ function hasExistingConfig() {
   return false;
 }
 
+function getLocalPreferencesPath() {
+  return path.join(hanakoHome, "user", "preferences.json");
+}
+
+function readLocalPreferences() {
+  try {
+    return JSON.parse(fs.readFileSync(getLocalPreferencesPath(), "utf-8"));
+  } catch {
+    return {};
+  }
+}
+
+function writeLocalPreferences(prefs) {
+  const prefsPath = getLocalPreferencesPath();
+  fs.mkdirSync(path.dirname(prefsPath), { recursive: true });
+  fs.writeFileSync(prefsPath, JSON.stringify(prefs, null, 2) + "\n", "utf-8");
+}
+
+function joinBaseUrl(baseUrl, apiPath) {
+  const base = String(baseUrl || "").replace(/\/+$/, "");
+  const suffix = String(apiPath || "");
+  return `${base}${suffix.startsWith("/") ? suffix : `/${suffix}`}`;
+}
+
+function buildBrowserBridgeUrl(baseUrl, token) {
+  const parsed = new URL(baseUrl);
+  parsed.protocol = parsed.protocol === "https:" ? "wss:" : "ws:";
+  parsed.pathname = `${parsed.pathname.replace(/\/+$/, "")}/ws/browser-bridge`;
+  if (token) parsed.searchParams.set("token", token);
+  parsed.searchParams.set("deviceId", `${os.hostname()}-${process.pid}`);
+  return parsed.toString();
+}
+
+function normalizeBaseUrl(raw) {
+  const input = String(raw || "").trim();
+  if (!input) return "";
+
+  let parsed;
+  try {
+    parsed = new URL(input);
+  } catch {
+    throw new Error("Gateway URL must be a valid http(s) URL");
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("Gateway URL must use http or https");
+  }
+
+  parsed.hash = "";
+  return parsed.toString().replace(/\/+$/, "");
+}
+
+function derivePortFromBaseUrl(baseUrl) {
+  if (!baseUrl) return null;
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.port) return parsed.port;
+    if (parsed.protocol === "https:") return "443";
+    if (parsed.protocol === "http:") return "80";
+  } catch {}
+  return null;
+}
+
+function readGatewayConfig() {
+  const prefs = readLocalPreferences();
+  const gateway = prefs.gateway || {};
+  let baseUrl = String(gateway.baseUrl || "").trim();
+  if (baseUrl) {
+    try { baseUrl = normalizeBaseUrl(baseUrl); } catch {}
+  }
+  return {
+    mode: gateway.mode === "remote" ? "remote" : "local",
+    baseUrl,
+    token: typeof gateway.token === "string" ? gateway.token : "",
+  };
+}
+
+function saveGatewayConfig(partial = {}) {
+  const prefs = readLocalPreferences();
+  const current = readGatewayConfig();
+  const mode = partial.mode === "remote"
+    ? "remote"
+    : partial.mode === "local"
+      ? "local"
+      : current.mode;
+
+  let baseUrl = partial.baseUrl !== undefined
+    ? String(partial.baseUrl || "").trim()
+    : current.baseUrl;
+  if (baseUrl) {
+    baseUrl = normalizeBaseUrl(baseUrl);
+  }
+
+  const token = partial.token !== undefined
+    ? String(partial.token || "")
+    : current.token;
+
+  prefs.gateway = { mode, baseUrl, token };
+  writeLocalPreferences(prefs);
+  return { ...prefs.gateway };
+}
+
+async function verifyGatewayConfig(config = readGatewayConfig()) {
+  const mode = config.mode === "remote" ? "remote" : "local";
+  if (mode !== "remote") {
+    return { ok: true, mode: "local" };
+  }
+
+  const baseUrl = normalizeBaseUrl(config.baseUrl || "");
+  if (!baseUrl) {
+    throw new Error("Remote gateway URL is required");
+  }
+
+  const headers = {};
+  if (config.token) {
+    headers.Authorization = `Bearer ${config.token}`;
+  }
+
+  const res = await fetch(joinBaseUrl(baseUrl, "/api/health"), {
+    headers,
+    signal: AbortSignal.timeout(4000),
+  });
+  if (!res.ok) {
+    throw new Error(`Gateway health check failed: ${res.status} ${res.statusText}`);
+  }
+
+  let health = {};
+  try { health = await res.json(); } catch {}
+  return { ok: true, mode, baseUrl, health };
+}
+
+async function connectRemoteGateway(config = readGatewayConfig()) {
+  const verified = await verifyGatewayConfig(config);
+  serverMode = "remote";
+  serverProcess = null;
+  reusedServerPid = null;
+  serverBaseUrl = verified.baseUrl;
+  serverToken = config.token || "";
+  serverPort = derivePortFromBaseUrl(serverBaseUrl);
+}
+
 // ── 启动 Server ──
 // 收集 server 的 stdout/stderr 用于崩溃诊断
 let _serverLogs = [];
 
 async function startServer() {
+  serverMode = "local";
+  serverBaseUrl = null;
   const serverInfoPath = path.join(hanakoHome, "server-info.json");
 
   // ── 1. 检查是否有已运行的 server（Electron crash 后遗留的守护进程） ──
@@ -182,6 +331,7 @@ async function startServer() {
         if (res.ok) {
           console.log(`[desktop] 复用已运行的 server，端口: ${existingInfo.port}`);
           serverPort = existingInfo.port;
+          serverBaseUrl = `http://127.0.0.1:${existingInfo.port}`;
           serverToken = existingInfo.token;
           reusedServerPid = existingInfo.pid;
           reused = true;
@@ -269,6 +419,7 @@ async function startServer() {
       if (msg?.type === "ready") {
         clearTimeout(timeout);
         serverPort = msg.port;
+        serverBaseUrl = `http://127.0.0.1:${msg.port}`;
         serverToken = msg.token;
         serverProcess.unref(); // 脱离 Electron 事件循环，允许 Electron 独立退出
         resolve(msg.port);
@@ -296,6 +447,24 @@ async function startServer() {
 /**
  * 持久监控 server 进程：崩溃后自动重启一次，再失败则写 crash log 并通知用户
  */
+async function connectBackend() {
+  const gateway = readGatewayConfig();
+  if (gateway.mode === "remote") {
+    try {
+      await connectRemoteGateway(gateway);
+      gatewayFallbackError = null;
+      return;
+    } catch (err) {
+      gatewayFallbackError = err;
+      console.warn(`[desktop] Remote gateway unavailable, falling back to local server: ${err.message}`);
+      await startServer();
+      return;
+    }
+  }
+  gatewayFallbackError = null;
+  await startServer();
+}
+
 let _serverRestartAttempts = 0;
 function monitorServer() {
   if (!serverProcess) return;
@@ -313,7 +482,11 @@ function monitorServer() {
         monitorServer(); // 重新挂监控
         // 通知前端重连
         if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("server-restarted", { port: serverPort });
+          mainWindow.webContents.send("server-restarted", {
+            port: serverPort,
+            baseUrl: serverBaseUrl,
+            mode: serverMode,
+          });
         }
       } catch (err) {
         console.error("[desktop] Server 重启失败:", err.message);
@@ -1301,6 +1474,11 @@ async function handleBrowserCommand(cmd, params) {
 
 /** 监听 server 进程的浏览器命令 */
 function setupBrowserCommands() {
+  if (serverMode === "remote") {
+    setupRemoteBrowserBridge();
+    return;
+  }
+  clearRemoteBrowserBridge();
   if (!serverProcess) return;
   serverProcess.on("message", async (msg) => {
     if (msg?.type !== "browser-cmd") return;
@@ -1314,6 +1492,82 @@ function setupBrowserCommands() {
       if (serverProcess && !serverProcess.killed) {
         serverProcess.send({ type: "browser-result", id, error: err.message });
       }
+    }
+  });
+}
+
+function clearRemoteBrowserBridge({ terminate = false } = {}) {
+  if (browserBridgeReconnectTimer) {
+    clearTimeout(browserBridgeReconnectTimer);
+    browserBridgeReconnectTimer = null;
+  }
+  const ws = browserBridgeSocket;
+  browserBridgeSocket = null;
+  if (!ws) return;
+  try {
+    if (terminate) ws.terminate();
+    else ws.close();
+  } catch {}
+}
+
+function scheduleRemoteBrowserBridgeReconnect(delayMs = 3000) {
+  if (browserBridgeReconnectTimer || serverMode !== "remote" || isQuitting) return;
+  browserBridgeReconnectTimer = setTimeout(() => {
+    browserBridgeReconnectTimer = null;
+    setupRemoteBrowserBridge();
+  }, delayMs);
+}
+
+function setupRemoteBrowserBridge() {
+  if (serverMode !== "remote" || !serverBaseUrl) {
+    clearRemoteBrowserBridge();
+    return;
+  }
+  if (browserBridgeSocket && (
+    browserBridgeSocket.readyState === WebSocket.OPEN ||
+    browserBridgeSocket.readyState === WebSocket.CONNECTING
+  )) {
+    return;
+  }
+
+  const wsUrl = buildBrowserBridgeUrl(serverBaseUrl, serverToken);
+  const ws = new WebSocket(wsUrl);
+  browserBridgeSocket = ws;
+
+  ws.on("open", () => {
+    console.log("[desktop] Browser bridge connected");
+  });
+
+  ws.on("message", async (raw) => {
+    let msg = null;
+    try {
+      msg = JSON.parse(raw.toString());
+    } catch {
+      return;
+    }
+    if (!msg || msg.type !== "browser-cmd") return;
+    const { id, cmd, params } = msg;
+    try {
+      const result = await handleBrowserCommand(cmd, params || {});
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "browser-result", id, result }));
+      }
+    } catch (err) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "browser-result", id, error: err.message }));
+      }
+    }
+  });
+
+  ws.on("error", (err) => {
+    console.warn("[desktop] Browser bridge error:", err.message);
+  });
+
+  ws.on("close", () => {
+    if (browserBridgeSocket === ws) browserBridgeSocket = null;
+    if (!isQuitting && serverMode === "remote") {
+      console.warn("[desktop] Browser bridge disconnected, retrying...");
+      scheduleRemoteBrowserBridgeReconnect();
     }
   });
 }
@@ -1388,7 +1642,12 @@ function isNewerVersion(latest, current) {
 
 // ── IPC ──
 ipcMain.handle("get-server-port", () => serverPort);
+ipcMain.handle("get-server-base-url", () => serverBaseUrl);
 ipcMain.handle("get-server-token", () => serverToken);
+ipcMain.handle("get-server-mode", () => serverMode);
+ipcMain.handle("get-gateway-config", () => readGatewayConfig());
+ipcMain.handle("save-gateway-config", (_event, config) => saveGatewayConfig(config || {}));
+ipcMain.handle("verify-gateway-config", async (_event, config) => verifyGatewayConfig(config || readGatewayConfig()));
 ipcMain.handle("get-app-version", () => app.getVersion());
 ipcMain.handle("check-update", () => _updateInfo);
 
@@ -1805,6 +2064,44 @@ ipcMain.handle("read-file-base64", (_event, filePath) => {
   } catch { return null; }
 });
 
+ipcMain.handle("get-path-info", (_event, filePath) => {
+  if (!filePath || !path.isAbsolute(filePath)) return null;
+  try {
+    const stat = fs.statSync(filePath);
+    return {
+      exists: true,
+      isDirectory: stat.isDirectory(),
+      isFile: stat.isFile(),
+      size: stat.isFile() ? stat.size : null,
+    };
+  } catch {
+    return {
+      exists: false,
+      isDirectory: false,
+      isFile: false,
+      size: null,
+    };
+  }
+});
+
+ipcMain.handle("save-temp-base64-file", (_event, fileName, base64Data) => {
+  if (!fileName || typeof fileName !== "string" || !base64Data || typeof base64Data !== "string") {
+    return null;
+  }
+  try {
+    const safeName = path.basename(fileName);
+    const dir = path.join(app.getPath("temp"), "hanako-remote-downloads");
+    fs.mkdirSync(dir, { recursive: true });
+    const ext = path.extname(safeName);
+    const base = path.basename(safeName, ext) || "download";
+    const target = path.join(dir, `${base}_${Date.now().toString(36)}${ext}`);
+    fs.writeFileSync(target, Buffer.from(base64Data, "base64"));
+    return target;
+  } catch {
+    return null;
+  }
+});
+
 // 读取 docx 文件并转为 HTML（mammoth）
 ipcMain.handle("read-docx-html", async (_event, filePath) => {
   if (!filePath || !path.isAbsolute(filePath)) return null;
@@ -1954,9 +2251,23 @@ app.whenReady().then(async () => {
 
     // 2. 后台启动 server
     console.log("[desktop] 启动 Hanako Server...");
-    await startServer();
+    const gateway = readGatewayConfig();
+    if (gateway.mode === "remote") {
+      console.log(`[desktop] Connecting to Hanako Gateway: ${gateway.baseUrl || "(unset)"}`);
+    } else {
+      console.log("[desktop] 启动 Hanako Server...");
+    }
+    await connectBackend();
     console.log(`[desktop] Server 就绪，端口: ${serverPort}`);
-    monitorServer();
+    if (serverMode === "remote") {
+      console.log(`[desktop] Gateway ready: ${serverBaseUrl}`);
+    } else {
+      console.log(`[desktop] Server ready on ${serverBaseUrl}`);
+    }
+    console.log(`[desktop] Server 就绪，端口: ${serverPort}`);
+    if (serverMode === "local") {
+      monitorServer();
+    }
     setupBrowserCommands();
     createTray();
 
@@ -2042,6 +2353,7 @@ app.on("before-quit", async (event) => {
   isQuitting = true;
   isExitingServer = true; // Cmd+Q 走完全退出路径，连 server 一起关
   // 完全退出：清理浏览器实例（仅在真正退出时执行，避免隐藏路径打断后台浏览器能力）
+  clearRemoteBrowserBridge({ terminate: true });
   for (const [sp, view] of _browserViews) {
     try { view.webContents.close(); } catch {}
   }

@@ -329,7 +329,7 @@ function buildSessionList(card: HTMLElement): void {
       avatar.onerror = () => {
         avatar.onerror = null;
         const ag = s.agents.find((x: any) => x.id === sess.agentId);
-        avatar.src = yuanFallbackAvatar(ag?.yuan);
+        avatar.src = yuanFallbackAvatar(ag?.yuan || 'hanako');
       };
     } else {
       avatar.src = yuanFallbackAvatar(s.agentYuan);
