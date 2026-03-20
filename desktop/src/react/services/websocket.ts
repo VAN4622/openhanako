@@ -13,8 +13,6 @@ import { useStore } from '../stores';
 import { setStatus } from '../utils/ui-helpers';
 import { buildWebSocketUrl } from '../utils/server-url';
 
-declare function t(key: string, vars?: Record<string, string>): any;
-
 // ── 模块级 WS 实例 ──
 let _ws: WebSocket | null = null;
 
@@ -50,10 +48,8 @@ export function connectWebSocket(baseUrl?: string, token?: string): void {
   _ws = new WebSocket(url);
 
   _ws.onopen = () => {
-    useStore.setState({ connected: true });
     _wsRetryDelay = 1000;
-
-    setStatus(t('status.connected'), true);
+    setStatus('status.connected', true);
 
     const s = useStore.getState();
     if (s.currentSessionPath && s.isStreaming) {
@@ -80,7 +76,7 @@ export function connectWebSocket(baseUrl?: string, token?: string): void {
 
   _ws.onclose = () => {
     useStore.setState({ connected: false });
-    setStatus(t('status.disconnected'), false);
+    setStatus('status.disconnected', false);
     _wsRetryTimer = setTimeout(() => connectWebSocket(serverBaseUrl || undefined, serverToken || undefined), _wsRetryDelay);
     _wsRetryDelay = Math.min(_wsRetryDelay * 2, WS_RETRY_MAX);
   };

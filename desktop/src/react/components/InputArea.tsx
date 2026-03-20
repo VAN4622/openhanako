@@ -19,33 +19,15 @@ import type { ThinkingLevel } from '../stores/model-slice';
 // ── Toast 通知 ──
 
 function showToast(text: string, type: 'success' | 'error' = 'success', duration = 20000) {
-  const el = document.createElement('div');
-  el.className = `hana-toast ${type}`;
-
-  const span = document.createElement('span');
-  span.textContent = text;
-  el.appendChild(span);
-
-  const close = document.createElement('button');
-  close.className = 'hana-toast-close';
-  close.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>';
-  close.onclick = dismiss;
-  el.appendChild(close);
-
-  document.body.appendChild(el);
-  requestAnimationFrame(() => el.classList.add('show'));
-
-  const timer = setTimeout(dismiss, duration);
-  function dismiss() {
-    clearTimeout(timer);
-    el.classList.remove('show');
-    setTimeout(() => el.remove(), 300);
-  }
+  useStore.getState().addToast(text, type, duration);
 }
 
 // ── 斜杠命令 ──
 
-const XING_PROMPT = `回顾这个 session 里我（用户）发送的消息。只从我的对话内容中提取指导、偏好、纠正和工作流程，整理成一份可复用的工作指南。
+const isZh = (window as any).i18n?.locale?.startsWith?.('zh') ?? true;
+
+const XING_PROMPT = isZh
+  ? `回顾这个 session 里我（用户）发送的消息。只从我的对话内容中提取指导、偏好、纠正和工作流程，整理成一份可复用的工作指南。
 
 注意：不要提取系统提示词、记忆文件、人格设定等预注入内容，只关注我在本次对话中实际说的话。
 
@@ -69,7 +51,32 @@ const XING_PROMPT = `回顾这个 session 里我（用户）发送的消息。�
 2. 第二步
 </xing>
 
-以上是格式示范，实际内容根据对话提取。`;
+以上是格式示范，实际内容根据对话提取。`
+  : `Review the messages I (the user) sent in this session. Extract only guidance, preferences, corrections, and workflows from my conversation content, and compile them into a reusable work guide.
+
+Note: Do not extract system prompts, memory files, persona settings, or other pre-injected content. Only focus on what I actually said in this conversation.
+
+Requirements:
+1. Keep only reusable patterns; filter out context specific to this session (e.g., specific filenames or topics)
+2. Organize by category: style preferences, workflows, quality standards, caveats
+3. Use imperative phrasing ("Do X", "Avoid Y")
+4. Number sequential steps
+
+The title should be specific enough to tell at a glance what this workflow is about (e.g., "War Reporting Fact-Check Process", "Paper Polishing Style Guide"). Avoid generic names (e.g., "Workflow Summary", "Conversation Review").
+
+Output strictly in the following format (use straight quotes ", not curly quotes):
+
+<xing title="Specific workflow name">
+## Style Preferences
+- Do X
+- Avoid Y
+
+## Workflow
+1. Step one
+2. Step two
+</xing>
+
+The above is a format example; actual content should be extracted from the conversation.`;
 
 // ── 斜杠命令定义 ──
 
@@ -87,12 +94,6 @@ interface SlashCommand {
 export function InputArea() {
   return <InputAreaInner />;
 }
-
-/** t() 翻译缺失时返回 key 本身（truthy），|| fallback 不会触发。这个包一层检测 */
-const tSafe = (t: (k: string) => string, key: string, fallback: string) => {
-  const v = t(key);
-  return v !== key ? v : fallback;
-};
 
 function InputAreaInner() {
   const { t } = useI18n();
@@ -124,6 +125,12 @@ function InputAreaInner() {
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isComposing = useRef(false);
+
+  // Focus trigger from store
+  const inputFocusTrigger = useStore(s => s.inputFocusTrigger);
+  useEffect(() => {
+    if (inputFocusTrigger > 0) textareaRef.current?.focus();
+  }, [inputFocusTrigger]);
 
   // Zustand actions
   const addAttachedFile = useStore(s => s.addAttachedFile);
@@ -182,13 +189,13 @@ function InputAreaInner() {
       const data = await res.json();
 
       if (!res.ok || data.error) {
-        showToast(tSafe(t, 'slash.diaryFailed', '日记写入失败'), 'error');
+        showToast(t('slash.diaryFailed'), 'error');
         return;
       }
 
-      showToast(tSafe(t, 'slash.diaryDone', '日记已保存'), 'success');
+      showToast(t('slash.diaryDone'), 'success');
     } catch (err) {
-      showToast(tSafe(t, 'slash.diaryFailed', '日记写入失败'), 'error');
+      showToast(t('slash.diaryFailed'), 'error');
     } finally {
       setSlashBusy(null);
     }
@@ -220,15 +227,15 @@ function InputAreaInner() {
     {
       name: 'diary',
       label: '/diary',
-      description: tSafe(t, 'slash.diary', '写今日日记'),
-      busyLabel: tSafe(t, 'slash.diaryBusy', '正在写日记...'),
+      description: t('slash.diary'),
+      busyLabel: t('slash.diaryBusy'),
       icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>',
       execute: executeDiary,
     },
     {
       name: 'xing',
       label: '/xing',
-      description: tSafe(t, 'slash.xing', '反省当前对话'),
+      description: t('slash.xing'),
       busyLabel: '',
       icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>',
       execute: executeXing,
@@ -236,8 +243,8 @@ function InputAreaInner() {
     {
       name: 'compact',
       label: '/compact',
-      description: tSafe(t, 'slash.compact', '压缩上下文'),
-      busyLabel: tSafe(t, 'slash.compactBusy', '正在压缩...'),
+      description: t('slash.compact'),
+      busyLabel: t('slash.compactBusy'),
       icon: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 14 10 14 10 20"/><polyline points="20 10 14 10 14 4"/><line x1="14" y1="10" x2="21" y2="3"/><line x1="3" y1="21" x2="10" y2="14"/></svg>',
       execute: executeCompact,
     },
@@ -299,7 +306,7 @@ function InputAreaInner() {
         const ext = mimeType.split('/')[1] || 'png';
         addAttachedFile({
           path: `clipboard-${Date.now()}.${ext}`,
-          name: `粘贴图片.${ext}`,
+          name: `${t('input.pastedImage')}.${ext}`,
           base64Data,
           mimeType,
         });
@@ -552,7 +559,7 @@ function InputAreaInner() {
       {slashBusy && (
         <div className="slash-busy-bar">
           <span className="slash-busy-dot" />
-          <span>{slashCommands.find(c => c.name === slashBusy)?.busyLabel || '执行中...'}</span>
+          <span>{slashCommands.find(c => c.name === slashBusy)?.busyLabel || t('common.executing')}</span>
         </div>
       )}
 
@@ -686,13 +693,13 @@ function PlanModeButton({ enabled, onToggle }: {
   return (
     <button
       className={'plan-mode-btn' + (!enabled ? ' active' : '')}
-      title={t('input.planMode') || '操作电脑'}
+      title={t('input.planMode')}
       onClick={handleClick}
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <polyline points="4 17 10 11 4 5" /><line x1="12" y1="19" x2="20" y2="19" />
       </svg>
-      <span className="plan-mode-label">{t('input.planMode') || '操作电脑'}</span>
+      <span className="plan-mode-label">{t('input.planMode')}</span>
     </button>
   );
 }
@@ -709,7 +716,7 @@ function DocContextButton({ active, disabled, onToggle }: {
   return (
     <button
       className={'desk-context-btn' + (active ? ' active' : '')}
-      title={t('input.docContext') || '看着文档说'}
+      title={t('input.docContext')}
       disabled={disabled}
       onClick={onToggle}
     >
@@ -720,7 +727,7 @@ function DocContextButton({ active, disabled, onToggle }: {
         <line x1="16" y1="17" x2="8" y2="17" />
         <polyline points="10 9 9 9 8 9" />
       </svg>
-      <span className="desk-context-label">{t('input.docContext') || '看着文档说'}</span>
+      <span className="desk-context-label">{t('input.docContext')}</span>
     </button>
   );
 }
@@ -728,6 +735,7 @@ function DocContextButton({ active, disabled, onToggle }: {
 // ── Context Usage Ring ──
 
 function ContextRing() {
+  const { t } = useI18n();
   const agentYuan = useStore(s => s.agentYuan);
   const isStreaming = useStore(s => s.isStreaming);
   const [tokens, setTokens] = useState<number | null>(null);
@@ -803,8 +811,8 @@ function ContextRing() {
       </button>
       {hovered && (
         <div className="context-ring-tooltip">
-          <div className="context-ring-tooltip-row">上下文 {windowK}k</div>
-          <div className="context-ring-tooltip-row">已用 {tokensK}k ({Math.round(pct)}%)</div>
+          <div className="context-ring-tooltip-row">{t('input.contextWindow', { windowK })}</div>
+          <div className="context-ring-tooltip-row">{t('input.tokensUsed', { tokensK, pct: Math.round(pct) })}</div>
         </div>
       )}
     </span>
@@ -1030,7 +1038,7 @@ function SendButton({ isStreaming, hasInput, disabled, onSend, onSteer, onStop }
           <svg className="send-enter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 10 4 15 9 20" /><path d="M20 4v7a4 4 0 01-4 4H4" />
           </svg>
-          <span className="send-label-text">{t('chat.send') || '发送'}</span>
+          <span className="send-label-text">{t('chat.send')}</span>
         </span>
       )}
       {mode === 'steer' && (
@@ -1038,7 +1046,7 @@ function SendButton({ isStreaming, hasInput, disabled, onSend, onSteer, onStop }
           <svg className="send-enter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
-          <span className="send-label-text">{t('chat.steer') || '插话'}</span>
+          <span className="send-label-text">{t('chat.steer')}</span>
         </span>
       )}
       {mode === 'stop' && (
@@ -1046,7 +1054,7 @@ function SendButton({ isStreaming, hasInput, disabled, onSend, onSteer, onStop }
           <svg className="stop-icon" width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
             <rect x="6" y="6" width="12" height="12" rx="2" />
           </svg>
-          <span className="send-label-text">{t('chat.stop') || '停止'}</span>
+          <span className="send-label-text">{t('chat.stop')}</span>
         </span>
       )}
     </button>

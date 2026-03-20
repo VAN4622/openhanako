@@ -44,8 +44,13 @@
         .titlebar-minimal {
             background: transparent;
             border-bottom: none;
+            z-index: 100;
         }
-        /* Windows/Linux：无红绿灯，不需要大 padding-top */
+        /* Windows/Linux：settings-panel 顶部让出 titlebar 高度，避免 drag 区域冲突 */
+        html[data-platform="win32"] .settings-panel,
+        html[data-platform="linux"] .settings-panel {
+            top: 38px;
+        }
         html[data-platform="win32"] .settings-header,
         html[data-platform="linux"] .settings-header {
             padding-top: 10px;
@@ -53,6 +58,7 @@
         html[data-platform="win32"] .titlebar-minimal,
         html[data-platform="linux"] .titlebar-minimal {
             pointer-events: auto;
+            height: 38px;
         }
         /* 加载蒙版 */
         .settings-loading-mask {
@@ -72,11 +78,10 @@
     </style>
 </head>
 <body>
-    <!-- Windows/Linux 自绘窗口控制按钮注入点（platform.js initPlatform 查找 .titlebar 并注入） -->
-    <div class="titlebar titlebar-minimal"></div>
     <div id="react-root"></div>
+    <!-- Windows/Linux 自绘窗口控制按钮注入点：必须在 react-root 之后，否则被 React 渲染层遮蔽 -->
+    <div class="titlebar titlebar-minimal"></div>
 
-    <script src="lib/markdown-it.min.js"></script>
     <script src="lib/i18n.js"></script>
     <script src="lib/theme.js"></script>
     <script src="modules/platform.js"></script>

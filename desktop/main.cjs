@@ -45,13 +45,35 @@ if (hanakoHome !== defaultHome) {
 let splashWindow = null;
 let mainWindow = null;
 let onboardingWindow = null;
-let devToolsWindow = null;
+
 let settingsWindow = null;
-let skillViewerWindow = null;
+
 let browserViewerWindow = null;
 let _browserWebView = null;        // 当前活跃的 WebContentsView
 const _browserViews = new Map();   // sessionPath → WebContentsView（挂起的浏览器）
 let _currentBrowserSession = null; // 当前浏览器绑定的 sessionPath
+
+/** Vite 入口页面统一加载（dev → Vite dev server，prod → dist-renderer，fallback → src） */
+const _isDev = process.argv.includes("--dev");
+const _distRenderer = path.join(__dirname, "dist-renderer");
+
+function loadWindowURL(win, pageName, opts) {
+  if (_isDev && process.env.VITE_DEV_URL) {
+    let url = `${process.env.VITE_DEV_URL}/${pageName}.html`;
+    if (opts?.query && Object.keys(opts.query).length > 0) {
+      const qs = new URLSearchParams(opts.query).toString();
+      url += `?${qs}`;
+    }
+    win.loadURL(url);
+  } else {
+    const built = path.join(_distRenderer, `${pageName}.html`);
+    if (!_isDev && fs.existsSync(built)) {
+      win.loadFile(built, opts);
+    } else {
+      win.loadFile(path.join(__dirname, "src", `${pageName}.html`), opts);
+    }
+  }
+}
 
 /** 校验浏览器 URL：仅允许 http/https */
 function isAllowedBrowserUrl(url) {
@@ -75,6 +97,59 @@ let tray = null;
 let reusedServerPid = null; // 复用已有 server 时记录其 PID，退出时发 SIGTERM
 let isExitingServer = false; // 只有托盘"退出"时才 kill server，其余路径仅关前端
 let forceQuitApp = false;   // 启动失败等场景需要真正退出，绕过"隐藏保持运行"拦截
+
+// ── 主进程 i18n ──
+// 从 agent config.yaml 读取 locale，加载对应语言包的 "main" 部分
+let _mainI18nData = null;
+
+function _resolveLocaleKey(locale) {
+  if (!locale) return "zh";
+  if (locale === "zh-TW" || locale === "zh-Hant") return "zh-TW";
+  if (locale.startsWith("zh")) return "zh";
+  if (locale.startsWith("ja")) return "ja";
+  if (locale.startsWith("ko")) return "ko";
+  return "en";
+}
+
+function _getMainI18n() {
+  if (_mainI18nData) return _mainI18nData;
+  try {
+    // 从 preferences.json 读取全局 locale（和 server/renderer 一致）
+    let locale = null;
+    try {
+      const prefs = JSON.parse(fs.readFileSync(path.join(hanakoHome, "preferences.json"), "utf-8"));
+      locale = prefs.locale || null;
+    } catch { /* preferences.json 不存在时 fallback */ }
+    const key = _resolveLocaleKey(locale);
+    const file = path.join(__dirname, "src", "locales", `${key}.json`);
+    const all = JSON.parse(fs.readFileSync(file, "utf-8"));
+    _mainI18nData = all.main || {};
+  } catch {
+    _mainI18nData = {};
+  }
+  return _mainI18nData;
+}
+
+/**
+ * 主进程翻译函数
+ * @param {string} dotPath  如 "tray.show" → main.tray.show
+ * @param {object} [vars]   占位符变量 {key: value}
+ * @param {string} [fallback] 找不到时的回退文本
+ */
+function mt(dotPath, vars, fallback) {
+  const data = _getMainI18n();
+  const val = dotPath.split(".").reduce((obj, k) => obj?.[k], data);
+  let text = (typeof val === "string") ? val : (fallback || dotPath);
+  if (vars) {
+    for (const [k, v] of Object.entries(vars)) {
+      text = text.replace(new RegExp(`\\{${k}\\}`, "g"), v);
+    }
+  }
+  return text;
+}
+
+/** 重置 i18n 缓存（locale 变更时调用） */
+function resetMainI18n() { _mainI18nData = null; }
 
 /** 跨平台杀进程：Windows 用 taskkill，POSIX 用 signal */
 function killPid(pid, force = false) {
@@ -412,7 +487,7 @@ async function startServer() {
 
     const timeout = setTimeout(() => {
       try { serverProcess.kill(); } catch {}
-      reject(new Error("Server 启动超时（60s）"));
+      reject(new Error(mt("dialog.serverStartTimeout", null, "Server start timed out (60s)")));
     }, 60000);
 
     serverProcess.on("message", (msg) => {
@@ -435,10 +510,10 @@ async function startServer() {
       if (signal) {
         // 被信号终止（如 SIGSEGV），立即报错而非等 60s 超时
         clearTimeout(timeout);
-        reject(new Error(`Server 被信号终止 (${signal})`));
+        reject(new Error(mt("dialog.serverKilledBySignal", { signal })));
       } else if (code !== 0 && code !== null) {
         clearTimeout(timeout);
-        reject(new Error(`Server 退出，code: ${code}`));
+        reject(new Error(mt("dialog.serverExitedWithCode", { code })));
       }
     });
   });
@@ -491,11 +566,11 @@ function monitorServer() {
       } catch (err) {
         console.error("[desktop] Server 重启失败:", err.message);
         writeCrashLog(`Server 重启失败: ${err.message}`);
-        dialog.showErrorBox("Hanako Server", `Server 崩溃后重启失败。\n${err.message}\n\n请重新启动应用。`);
+        dialog.showErrorBox("Hanako Server", mt("dialog.serverRestartFailed", { error: err.message }));
       }
     } else {
       writeCrashLog(`Server 多次崩溃 (${reason})，放弃重启`);
-      dialog.showErrorBox("Hanako Server", `Server 多次崩溃 (${reason})。\n\n请重新启动应用。`);
+      dialog.showErrorBox("Hanako Server", mt("dialog.serverMultipleCrash", { reason }));
     }
   });
 }
@@ -537,10 +612,10 @@ function createTray() {
   tray.setToolTip(isDev ? "Hanako (dev)" : "Hanako");
 
   const buildMenu = () => Menu.buildFromTemplate([
-    { label: "显示 Hanako", click: () => showPrimaryWindow() },
-    { label: "设置", click: () => createSettingsWindow() },
+    { label: mt("tray.show", null, "Show Hanako"), click: () => showPrimaryWindow() },
+    { label: mt("tray.settings", null, "Settings"), click: () => createSettingsWindow() },
     { type: "separator" },
-    { label: "退出", click: () => { isExitingServer = true; isQuitting = true; app.quit(); } },
+    { label: mt("tray.quit", null, "Quit"), click: () => { isExitingServer = true; isQuitting = true; app.quit(); } },
   ]);
 
   tray.setContextMenu(buildMenu());
@@ -617,7 +692,7 @@ function createSplashWindow() {
     },
   });
 
-  splashWindow.loadFile(path.join(__dirname, "src", "splash.html"));
+  loadWindowURL(splashWindow, "splash");
 
   splashWindow.once("ready-to-show", () => {
     splashWindow.show();
@@ -760,6 +835,17 @@ function createMainWindow() {
   mainWindow.on("resize", saveWindowState);
   mainWindow.on("move", saveWindowState);
 
+  // 拦截页面内链接导航：外部 URL 用系统浏览器打开，不要导航 Electron 窗口
+  mainWindow.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        event.preventDefault();
+        shell.openExternal(url);
+      }
+    } catch {}
+  });
+
   // 广播最大化状态变化（Windows/Linux 自绘标题栏的最大化/还原按钮需要）
   mainWindow.on("maximize", () => mainWindow.webContents.send("window-maximized"));
   mainWindow.on("unmaximize", () => mainWindow.webContents.send("window-unmaximized"));
@@ -771,20 +857,14 @@ function createMainWindow() {
       mainWindow.hide();
       // 不调 app.dock.hide()，Dock 上保留图标和黑点
       // 同时隐藏子窗口
-      if (devToolsWindow && !devToolsWindow.isDestroyed()) devToolsWindow.hide();
       if (settingsWindow && !settingsWindow.isDestroyed()) settingsWindow.hide();
       if (browserViewerWindow && !browserViewerWindow.isDestroyed()) browserViewerWindow.hide();
-      if (skillViewerWindow && !skillViewerWindow.isDestroyed()) skillViewerWindow.hide();
       if (editorWindow && !editorWindow.isDestroyed()) editorWindow.hide();
     }
   });
 
   mainWindow.on("closed", () => {
     mainWindow = null;
-    if (devToolsWindow && !devToolsWindow.isDestroyed()) {
-      devToolsWindow.destroy();
-      devToolsWindow = null;
-    }
     if (settingsWindow && !settingsWindow.isDestroyed()) {
       settingsWindow.destroy();
       settingsWindow = null;
@@ -793,52 +873,10 @@ function createMainWindow() {
       browserViewerWindow.destroy();
       browserViewerWindow = null;
     }
-    if (skillViewerWindow && !skillViewerWindow.isDestroyed()) {
-      skillViewerWindow.destroy();
-      skillViewerWindow = null;
-    }
     if (editorWindow && !editorWindow.isDestroyed()) {
       editorWindow.destroy();
       editorWindow = null;
     }
-  });
-}
-
-// ── 创建 DevTools 窗口 ──
-function createDevToolsWindow() {
-  if (devToolsWindow) {
-    devToolsWindow.show();
-    devToolsWindow.focus();
-    return;
-  }
-
-  devToolsWindow = new BrowserWindow({
-    width: 380,
-    height: 520,
-    minWidth: 300,
-    minHeight: 400,
-    title: "Hanako DevTools",
-    ...titleBarOpts({ x: 12, y: 12 }),
-    backgroundColor: "#F4F0E4",
-    show: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  loadRendererPage(devToolsWindow, { filename: "devtools.html" });
-
-  devToolsWindow.on("close", (e) => {
-    if (!isQuitting) {
-      e.preventDefault();
-      devToolsWindow.hide();
-    }
-  });
-
-  devToolsWindow.on("closed", () => {
-    devToolsWindow = null;
   });
 }
 
@@ -890,49 +928,29 @@ function createSettingsWindow(tab, theme) {
     });
   }
 
+  // 拦截设置窗口内的链接导航
+  settingsWindow.webContents.on("will-navigate", (event, url) => {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol === "https:" || parsed.protocol === "http:") {
+        event.preventDefault();
+        shell.openExternal(url);
+      }
+    } catch {}
+  });
+
   settingsWindow.on("closed", () => {
     settingsWindow = null;
   });
 }
 
-// ── 创建 Skill 预览窗口 ──
-function createSkillViewerWindow(skillInfo) {
-  if (skillViewerWindow && !skillViewerWindow.isDestroyed()) {
-    // 复用已有窗口，传递新 skill 数据
-    skillViewerWindow.webContents.send("skill-viewer-load", skillInfo);
-    skillViewerWindow.show();
-    skillViewerWindow.focus();
-    return;
+// ── Skill 预览 → 主窗口 overlay ──
+function _showSkillViewer(skillInfo) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("show-skill-viewer", skillInfo);
+    mainWindow.show();
+    mainWindow.focus();
   }
-
-  skillViewerWindow = new BrowserWindow({
-    width: 900,
-    height: 680,
-    minWidth: 600,
-    minHeight: 400,
-    title: skillInfo.name || "Skill Preview",
-    frame: false,
-    backgroundColor: "#F4F0E4",
-    show: true,
-    webPreferences: {
-      preload: path.join(__dirname, "preload.cjs"),
-      contextIsolation: true,
-      nodeIntegration: false,
-    },
-  });
-
-  skillViewerWindow.loadFile(path.join(__dirname, "src", "skill-viewer.html"));
-
-  // 页面加载完成后发送 skill 数据
-  skillViewerWindow.webContents.once("did-finish-load", () => {
-    if (skillViewerWindow && !skillViewerWindow.isDestroyed()) {
-      skillViewerWindow.webContents.send("skill-viewer-load", skillInfo);
-    }
-  });
-
-  skillViewerWindow.on("closed", () => {
-    skillViewerWindow = null;
-  });
 }
 
 /** 递归扫描目录，返回文件树 */
@@ -995,7 +1013,7 @@ function createBrowserViewerWindow(opts = {}) {
     },
   });
 
-  browserViewerWindow.loadFile(path.join(__dirname, "src", "browser-viewer.html"));
+  loadWindowURL(browserViewerWindow, "browser-viewer");
 
   // HTML 加载完成后，若浏览器已在运行则附加 WebContentsView
   browserViewerWindow.webContents.on("did-finish-load", () => {
@@ -1797,6 +1815,19 @@ ipcMain.on("settings-changed", (_event, type, data) => {
       browserViewerWindow.webContents.send("settings-changed", type, data);
     }
   }
+  if (type === "locale-changed") {
+    resetMainI18n();
+    // 重建托盘菜单，使标签跟随新 locale
+    if (tray && !tray.isDestroyed()) {
+      const buildMenu = () => Menu.buildFromTemplate([
+        { label: mt("tray.show", null, "Show Hanako"), click: () => showPrimaryWindow() },
+        { label: mt("tray.settings", null, "Settings"), click: () => createSettingsWindow() },
+        { type: "separator" },
+        { label: mt("tray.quit", null, "Quit"), click: () => { isExitingServer = true; isQuitting = true; app.quit(); } },
+      ]);
+      tray.setContextMenu(buildMenu());
+    }
+  }
 });
 
 // 获取头像本地路径（splash 用，不依赖 server）
@@ -1844,7 +1875,7 @@ ipcMain.handle("select-folder", async (event) => {
   if (!win) return null;
   const result = await dialog.showOpenDialog(win, {
     properties: ["openDirectory"],
-    title: "选择工作文件夹",
+    title: mt("dialog.selectFolder", null, "Select Working Folder"),
   });
   if (result.canceled || !result.filePaths.length) return null;
   return result.filePaths[0];
@@ -1856,7 +1887,7 @@ ipcMain.handle("select-skill", async (event) => {
   if (!win) return null;
   const result = await dialog.showOpenDialog(win, {
     properties: ["openFile", "openDirectory"],
-    title: "选择技能",
+    title: mt("dialog.selectSkill", null, "Select Skill"),
     filters: [
       { name: "Skill", extensions: ["zip", "skill"] },
       { name: "All Files", extensions: ["*"] },
@@ -1879,7 +1910,7 @@ ipcMain.handle("open-skill-viewer", (_event, data) => {
       // 先检查同名 skill 是否已安装在 skills 目录
       const installedDir = path.join(hanakoHome, "skills", baseName);
       if (fs.existsSync(path.join(installedDir, "SKILL.md"))) {
-        createSkillViewerWindow({ name: baseName, baseDir: installedDir, installed: false });
+        _showSkillViewer({ name: baseName, baseDir: installedDir, installed: false });
         return;
       }
 
@@ -1917,7 +1948,7 @@ ipcMain.handle("open-skill-viewer", (_event, data) => {
         const nameMatch = fmMatch?.[1]?.match(/^name:\s*(.+)$/m);
         const name = nameMatch ? nameMatch[1].trim().replace(/^["']|["']$/g, "") : baseName;
 
-        createSkillViewerWindow({ name, baseDir: skillDir, installed: false });
+        _showSkillViewer({ name, baseDir: skillDir, installed: false });
       } catch (err) {
         console.error("[skill-viewer] Failed to extract .skill file:", err.message);
       }
@@ -1926,7 +1957,7 @@ ipcMain.handle("open-skill-viewer", (_event, data) => {
   }
 
   if (!data.baseDir || !path.isAbsolute(data.baseDir)) return;
-  createSkillViewerWindow(data);
+  _showSkillViewer(data);
 });
 
 ipcMain.handle("skill-viewer-list-files", (_event, baseDir) => {
@@ -1951,11 +1982,8 @@ ipcMain.handle("skill-viewer-read-file", (_event, filePath) => {
   }
 });
 
-ipcMain.handle("close-skill-viewer", () => {
-  if (skillViewerWindow && !skillViewerWindow.isDestroyed()) {
-    skillViewerWindow.close();
-  }
-});
+// close-skill-viewer: overlay 模式下由渲染进程 setState 关闭，保留 handler 避免 preload 报错
+ipcMain.handle("close-skill-viewer", () => {});
 
 // 在系统文件管理器中打开文件夹（限制为目录且为绝对路径）
 ipcMain.handle("open-folder", (_event, folderPath) => {
@@ -2233,7 +2261,7 @@ ipcMain.handle("app-ready", () => {
     const settings = systemPreferences.getNotificationSettings?.();
     const status = settings?.authorizationStatus;
     if (settings && status === "not-determined") {
-      const notif = new Notification({ title: "Hana", body: "通知已就绪", silent: true });
+      const notif = new Notification({ title: "Hana", body: mt("notification.ready", null, "Notifications enabled"), silent: true });
       notif.show();
     }
   }
@@ -2303,10 +2331,8 @@ app.whenReady().then(async () => {
     const isDev = process.argv.includes("--dev") || process.env.NODE_ENV === "development";
     if (isDev) {
       globalShortcut.register("CommandOrControl+Alt+=", () => {
-        if (devToolsWindow && !devToolsWindow.isDestroyed()) {
-          devToolsWindow.close();
-        } else {
-          createDevToolsWindow();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("toggle-devtools");
         }
       });
     }
@@ -2320,8 +2346,8 @@ app.whenReady().then(async () => {
     // 截取最后 800 字符放进 dialog（太长会显示不全）
     const tail = crashInfo.length > 800 ? "...\n" + crashInfo.slice(-800) : crashInfo;
     dialog.showErrorBox(
-      "Hanako 启动失败",
-      `${tail}\n\n详细日志已保存到：\n${path.join(hanakoHome, "crash.log")}\n\n请将此截图或日志文件发送给开发者。`
+      mt("dialog.launchFailedTitle", null, "Hanako Launch Failed"),
+      mt("dialog.launchFailedBody", { detail: tail, logPath: path.join(hanakoHome, "crash.log") })
     );
     forceQuitApp = true;
     app.quit();

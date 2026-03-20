@@ -4,6 +4,8 @@ export interface ConnectionSlice {
   serverToken: string | null;
   serverMode: 'local' | 'remote' | 'web' | null;
   connected: boolean;
+  statusKey: string;
+  statusVars: Record<string, string | number>;
   setServerPort: (port: string) => void;
   setServerBaseUrl: (baseUrl: string | null) => void;
   setServerToken: (token: string) => void;
@@ -19,6 +21,8 @@ export const createConnectionSlice = (
   serverToken: null,
   serverMode: null,
   connected: false,
+  statusKey: '',
+  statusVars: {},
   setServerPort: (port) => set({ serverPort: port }),
   setServerBaseUrl: (baseUrl) => set({ serverBaseUrl: baseUrl }),
   setServerToken: (token) => set({ serverToken: token }),

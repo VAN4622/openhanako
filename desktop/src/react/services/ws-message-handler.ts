@@ -173,8 +173,15 @@ export function handleServerMessage(msg: any): void {
       break;
 
     case 'browser_bg_status': {
-      const bar = document.getElementById('browserBgBar');
-      if (bar) bar.classList.toggle('hidden', !msg.running);
+      useStore.setState({ browserRunning: !!msg.running });
+      break;
+    }
+
+    case 'devlog': {
+      const time = new Date().toLocaleTimeString(undefined, { hour12: false });
+      const logs = state.devLogs;
+      const next = [...logs, { level: msg.level || 'info', text: msg.text || '', time }];
+      useStore.setState({ devLogs: next.length > 200 ? next.slice(-200) : next });
       break;
     }
 

@@ -11,6 +11,7 @@ import path from "path";
 import os from "os";
 import { execSync } from "child_process";
 import { parseSkillMetadata } from "../../lib/skills/skill-metadata.js";
+import { t } from "../i18n.js";
 
 const MAX_INLINE_UPLOAD_BYTES = 20 * 1024 * 1024;
 
@@ -201,7 +202,7 @@ export default async function deskRoute(app, { engine, hub }) {
 
     // promote 需要先切到对应 agent（promoteActivitySession 操作当前焦点 agent 的目录）
     if (foundAgentId !== engine.currentAgentId) {
-      return { error: "只能提升当前助手的活动 session" };
+      return { error: t("error.activeSessionOnly") };
     }
 
     const newPath = engine.promoteActivitySession(entry.sessionFile);
@@ -230,9 +231,9 @@ export default async function deskRoute(app, { engine, hub }) {
   /** 手动触发心跳巡检（调试用） */
   app.post("/api/desk/heartbeat", async () => {
     const hb = hub?.scheduler?.heartbeat;
-    if (!hb) return { error: "Heartbeat 未初始化" };
+    if (!hb) return { error: "Heartbeat not initialized" };
     hb.triggerNow();
-    return { ok: true, message: "心跳已触发" };
+    return { ok: true, message: t("error.heartbeatTriggered") };
   });
 
   // ════════════════════════════
@@ -249,7 +250,7 @@ export default async function deskRoute(app, { engine, hub }) {
   /** 操作 cron 任务 */
   app.post("/api/desk/cron", async (req) => {
     const store = engine.agent.cronStore;
-    if (!store) return { error: "Desk 未初始化" };
+    if (!store) return { error: "Desk not initialized" };
 
     const { action, ...params } = req.body || {};
 
@@ -435,7 +436,7 @@ export default async function deskRoute(app, { engine, hub }) {
   app.get("/api/desk/path", async (req) => {
     const dir = req.query.dir ? decodeURIComponent(req.query.dir) : engine.deskCwd;
     if (!dir) return { path: null };
-    if (req.query.dir && !isApprovedDir(dir, engine)) return { error: "目录不在允许范围内" };
+    if (req.query.dir && !isApprovedDir(dir, engine)) return { error: t("error.dirNotAllowed") };
     fs.mkdirSync(dir, { recursive: true });
     return { path: dir };
   });
@@ -444,7 +445,7 @@ export default async function deskRoute(app, { engine, hub }) {
   app.get("/api/desk/files", async (req) => {
     const dir = req.query.dir ? decodeURIComponent(req.query.dir) : engine.deskCwd;
     if (!dir) return { files: [], subdir: "", basePath: null };
-    if (req.query.dir && !isApprovedDir(dir, engine)) return { error: "目录不在允许范围内" };
+    if (req.query.dir && !isApprovedDir(dir, engine)) return { error: t("error.dirNotAllowed") };
     const subdir = req.query.subdir || "";
     // 安全：禁止路径穿越
     if (subdir && (subdir.includes("\\") || subdir.includes("..") || subdir.startsWith("."))) {
@@ -459,7 +460,7 @@ export default async function deskRoute(app, { engine, hub }) {
   app.get("/api/desk/jian", async (req) => {
     const dir = req.query.dir ? decodeURIComponent(req.query.dir) : engine.deskCwd;
     if (!dir) return { content: null };
-    if (req.query.dir && !isApprovedDir(dir, engine)) return { error: "目录不在允许范围内" };
+    if (req.query.dir && !isApprovedDir(dir, engine)) return { error: t("error.dirNotAllowed") };
     const subdir = req.query.subdir || "";
     if (subdir && (subdir.includes("\\") || subdir.includes("..") || subdir.startsWith("."))) {
       return { error: "invalid subdir" };
@@ -478,8 +479,8 @@ export default async function deskRoute(app, { engine, hub }) {
   /** 保存指定目录的 jian.md（自动创建 / 内容为空时删除） */
   app.post("/api/desk/jian", async (req) => {
     const dir = req.body?.dir ? req.body.dir : engine.deskCwd;
-    if (!dir) return { error: "未设置工作空间" };
-    if (req.body?.dir && !isApprovedDir(dir, engine)) return { error: "目录不在允许范围内" };
+    if (!dir) return { error: t("error.noWorkspace") };
+    if (req.body?.dir && !isApprovedDir(dir, engine)) return { error: t("error.dirNotAllowed") };
     const { subdir, content } = req.body || {};
     const sub = subdir || "";
     if (sub && (sub.includes("\\") || sub.includes("..") || sub.startsWith("."))) {
@@ -507,8 +508,8 @@ export default async function deskRoute(app, { engine, hub }) {
   /** 工作空间文件操作（支持 subdir + dir override） */
   app.post("/api/desk/files", async (req) => {
     const baseDir = req.body?.dir || engine.deskCwd;
-    if (!baseDir) return { error: "未设置工作空间" };
-    if (req.body?.dir && !isApprovedDir(baseDir, engine)) return { error: "目录不在允许范围内" };
+    if (!baseDir) return { error: t("error.noWorkspace") };
+    if (req.body?.dir && !isApprovedDir(baseDir, engine)) return { error: t("error.dirNotAllowed") };
     fs.mkdirSync(baseDir, { recursive: true });
 
     const { action, subdir: sub, paths, files, name, content, oldName, newName } = req.body || {};

@@ -1,32 +1,46 @@
 /**
  * Markdown 渲染器
  *
- * 包装全局 markdown-it 实例（由 lib/markdown-it.min.js 提供 window.markdownit）。
- * 此处独立创建并管理 md 实例。
+ * 通过 npm import 使用 markdown-it，不依赖全局 window.markdownit。
  */
 
+import markdownit from 'markdown-it';
 import mk from '@traptitech/markdown-it-katex';
 import 'katex/dist/katex.min.css';
 
-interface MarkdownItInstance {
+type MarkdownOptions = Record<string, unknown>;
+type MarkdownIt = {
   render(src: string): string;
-  use(plugin: any, ...args: any[]): MarkdownItInstance;
-  core: { ruler: { after: (name: string, ruleName: string, fn: (state: unknown) => void) => void } };
-}
+  use(plugin: unknown, ...args: unknown[]): MarkdownIt;
+};
 
-let _md: MarkdownItInstance | null = null;
+let _md: MarkdownIt | null = null;
 
-export function getMd(): MarkdownItInstance {
+/** 获取默认 md 实例（html: false, katex 插件） */
+export function getMd(): MarkdownIt {
   if (_md) return _md;
-  const md = window.markdownit({
+  const md = markdownit({
     html: false,
     breaks: true,
     linkify: true,
     typographer: true,
-  }) as unknown as MarkdownItInstance;
+  }) as MarkdownIt;
   md.use(mk);
   _md = md;
-  return _md;
+  return md;
+}
+
+const _cache = new Map<string, MarkdownIt>();
+
+/** 获取自定义选项的 md 实例（缓存复用） */
+export function getMdWithOpts(opts: MarkdownOptions): MarkdownIt {
+  const key = JSON.stringify(opts);
+  let inst = _cache.get(key);
+  if (!inst) {
+    inst = markdownit(opts) as MarkdownIt;
+    _cache.set(key, inst);
+  }
+  return inst;
 }
 
 export function renderMarkdown(src: string): string {
