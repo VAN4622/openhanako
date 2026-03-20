@@ -1990,7 +1990,26 @@ html[data-platform="linux"] .tb-toggle-right {
     font-size: 0.95rem;
     line-height: 1.75;
     word-break: break-word;
+    position: relative;
 }
+
+.msg-copy-btn {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    background: var(--hana-bg);
+    border: 1px solid var(--hana-border);
+    border-radius: 4px;
+    padding: 4px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s;
+    color: var(--hana-text-muted);
+    line-height: 1;
+}
+.message.assistant:hover .msg-copy-btn { opacity: 0.6; }
+.msg-copy-btn:hover { opacity: 1 !important; color: var(--hana-text); }
+.msg-copy-btn.copied { opacity: 1 !important; color: var(--hana-accent, #4a9); }
 
 /* ========================================
    Markdown 渲染内容
@@ -2290,6 +2309,127 @@ html[data-platform="linux"] .tb-toggle-right {
     font-size: 0.75rem;
     font-style: italic;
 }
+
+/* ── 设置确认卡片 ── */
+.settings-confirm-card {
+    margin: var(--space-md) 0;
+    padding: var(--space-lg) var(--space-lg) var(--space-md);
+    background: var(--bg-card, #fff);
+    border-radius: var(--radius-md);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08), 0 0 0 1px rgba(0, 0, 0, 0.04);
+    font-size: 0.88rem;
+    min-width: 320px;
+    max-width: 420px;
+}
+.settings-confirm-card.done {
+    padding: var(--space-md);
+}
+.settings-confirm-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-md);
+}
+.settings-confirm-label {
+    font-weight: 600;
+    font-size: 0.92rem;
+    color: var(--text);
+}
+.settings-confirm-desc {
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    margin-top: 2px;
+    line-height: 1.4;
+}
+.settings-confirm-note {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    margin-top: var(--space-sm);
+}
+.settings-confirm-control {
+    margin: var(--space-md) 0;
+}
+
+/* 自定义选项列表（替代原生 select） */
+.settings-confirm-options {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    border: 1px solid var(--hana-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    max-height: 240px;
+    overflow-y: auto;
+}
+.settings-confirm-option {
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.85rem;
+    font-family: inherit;
+    color: var(--hana-text);
+    background: var(--hana-bg);
+    border: none;
+    text-align: left;
+    transition: background 0.1s;
+}
+.settings-confirm-option:hover {
+    background: var(--overlay-light, rgba(0,0,0,0.04));
+}
+.settings-confirm-option.selected {
+    background: var(--accent);
+    color: #fff;
+    font-weight: 500;
+}
+
+.settings-confirm-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid var(--hana-border);
+    border-radius: var(--radius-sm);
+    background: var(--hana-bg);
+    color: var(--hana-text);
+    font-size: 0.85rem;
+    font-family: inherit;
+    box-sizing: border-box;
+}
+.settings-confirm-input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+.settings-confirm-actions {
+    margin-top: var(--space-md);
+    display: flex;
+    gap: var(--space-sm);
+}
+.settings-confirm-btn {
+    padding: 7px 20px;
+    border: none;
+    border-radius: var(--radius-sm);
+    font-size: 0.82rem;
+    font-family: inherit;
+    cursor: pointer;
+    transition: opacity 0.15s, box-shadow 0.15s;
+}
+.settings-confirm-btn:hover { opacity: 0.9; }
+.settings-confirm-btn.confirm {
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+}
+.settings-confirm-btn.confirm:hover {
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.2);
+}
+.settings-confirm-btn.reject {
+    background: var(--overlay-medium);
+    color: var(--text-light);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+.settings-confirm-status {
+    font-size: 0.82rem;
+    padding: var(--space-xs) 0;
+    color: var(--text-muted);
+}
+.settings-confirm-status.confirmed { color: var(--accent); }
 
 .cron-confirm-status.approved { color: var(--green); }
 .cron-confirm-status.rejected { color: var(--text-muted); }
@@ -7044,6 +7184,19 @@ body.resizing .jian-sidebar-inner {
     color: var(--text);
 }
 
+a.about-link {
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+
+a.about-link:hover {
+    opacity: 1;
+}
+
 .about-license-toggle {
     display: inline-flex;
     align-items: center;
@@ -11435,7 +11588,7 @@ body.resizing .preview-panel-inner {
 
 /* 底部占位（给输入框留出呼吸空间） */
 .chat-session-footer {
-    height: 8rem;
+    height: 12rem;
     flex-shrink: 0;
 }
 

@@ -156,7 +156,7 @@ export class AgentManager {
           const lines = idMd.split("\n").filter(l => l.trim() && !l.startsWith("#"));
           identity = lines[0]?.trim() || "";
         } catch {}
-        const avatarDir = path.join(this._d.agentsDir, entry.name, "avatar");
+        const avatarDir = path.join(this._d.agentsDir, entry.name, "avatars");
         let hasAvatar = false;
         try {
           const avatarFiles = fs.readdirSync(avatarDir);

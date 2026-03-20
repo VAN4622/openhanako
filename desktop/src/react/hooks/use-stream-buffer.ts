@@ -325,7 +325,28 @@ class StreamBufferManager {
         this.flush(buf);
         useStore.getState().updateLastMessage(sessionPath, (m) => ({
           ...m,
-          blocks: [...(m.blocks || []), { type: 'cron_confirm', jobData: msg.jobData, status: 'pending' as const }],
+          blocks: [...(m.blocks || []), { type: 'cron_confirm', confirmId: msg.confirmId, jobData: msg.jobData, status: 'pending' as const }],
+        }));
+        break;
+
+      case 'settings_confirmation':
+        this.ensureMessage(buf);
+        this.flush(buf);
+        useStore.getState().updateLastMessage(sessionPath, (m) => ({
+          ...m,
+          blocks: [...(m.blocks || []), {
+            type: 'settings_confirm' as const,
+            confirmId: msg.confirmId,
+            settingKey: msg.settingKey,
+            cardType: msg.cardType,
+            currentValue: msg.currentValue,
+            proposedValue: msg.proposedValue,
+            options: msg.options,
+            label: msg.label,
+            description: msg.description,
+            frontend: msg.frontend,
+            status: 'pending' as const,
+          }],
         }));
         break;
 

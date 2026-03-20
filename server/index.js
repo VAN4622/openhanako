@@ -42,6 +42,8 @@ import browserBridgeRoute from "./routes/browser-bridge.js";
 import conversationsRoute from "./routes/conversations.js";
 import authRoute from "./routes/auth.js";
 import diaryRoute from "./routes/diary.js";
+import confirmRoute from "./routes/confirm.js";
+import { ConfirmStore } from "../lib/confirm-store.js";
 import { BridgeManager } from "../lib/bridge/bridge-manager.js";
 import { Hub } from "../hub/index.js";
 import { startCLI } from "./cli.js";
@@ -146,6 +148,10 @@ app.addHook("onRequest", (req, reply, done) => {
 // WebSocket 支持
 await app.register(websocket);
 
+// ── 阻塞式确认存储 ──
+const confirmStore = new ConfirmStore();
+engine._confirmStore = confirmStore;
+
 // ── 外部平台接入管理器 ──
 const bridgeManager = new BridgeManager({ engine, hub });
 hub.bridgeManager = bridgeManager;
@@ -170,6 +176,7 @@ app.register(browserBridgeRoute, { engine });
 app.register(conversationsRoute, { engine });
 app.register(authRoute, { engine });
 app.register(diaryRoute, { engine });
+app.register(confirmRoute, { confirmStore, engine });
 
 // 健康检查 + 身份信息
 app.get("/api/health", async () => {

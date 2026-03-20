@@ -2,12 +2,13 @@
  * AssistantMessage — 助手消息，遍历 ContentBlock 按类型渲染
  */
 
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { MarkdownContent } from './MarkdownContent';
 import { MoodBlock } from './MoodBlock';
 import { ThinkingBlock } from './ThinkingBlock';
 import { ToolGroupBlock } from './ToolGroupBlock';
 import { XingCard } from './XingCard';
+import { SettingsConfirmCard } from './SettingsConfirmCard';
 import type { ChatMessage, ContentBlock } from '../../stores/chat-types';
 import { useStore } from '../../stores';
 import { hanaFetch } from '../../hooks/use-hana-fetch';
@@ -44,6 +45,19 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showAv
 
   const blocks = message.blocks || [];
 
+  const [copied, setCopied] = useState(false);
+  const handleCopy = useCallback(() => {
+    const textBlocks = blocks.filter((b): b is ContentBlock & { type: 'text' } => b.type === 'text');
+    if (textBlocks.length === 0) return;
+    const tmp = document.createElement('div');
+    tmp.innerHTML = textBlocks.map(b => b.html).join('\n');
+    const text = tmp.innerText.trim();
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    }).catch(() => {});
+  }, [blocks]);
+
   return (
     <div className="message-group assistant">
       {showAvatar && (
@@ -75,6 +89,17 @@ export const AssistantMessage = memo(function AssistantMessage({ message, showAv
         {blocks.map((block, i) => (
           <ContentBlockView key={i} block={block} agentName={displayName} yuan={displayYuan} />
         ))}
+        <button className={`msg-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy} title="复制文本">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+            {copied
+              ? <polyline points="20 6 9 17 4 12" />
+              : <>
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </>
+            }
+          </svg>
+        </button>
       </div>
     </div>
   );
@@ -107,7 +132,9 @@ const ContentBlockView = memo(function ContentBlockView({ block, agentName, yuan
     case 'skill':
       return <SkillCard skillName={block.skillName} skillFilePath={block.skillFilePath} />;
     case 'cron_confirm':
-      return <CronConfirmCard jobData={block.jobData} status={block.status} />;
+      return <CronConfirmCard confirmId={(block as any).confirmId} jobData={block.jobData} status={block.status} />;
+    case 'settings_confirm':
+      return <SettingsConfirmCard {...block} />;
     default:
       return null;
   }
@@ -221,22 +248,41 @@ const BrowserScreenshot = memo(function BrowserScreenshot({ base64, mimeType }: 
   );
 });
 
-const CronConfirmCard = memo(function CronConfirmCard({ jobData, status: initialStatus }: { jobData: Record<string, unknown>; status: string }) {
+const CronConfirmCard = memo(function CronConfirmCard({ confirmId, jobData, status: initialStatus }: { confirmId?: string; jobData: Record<string, unknown>; status: string }) {
   const [status, setStatus] = useState(initialStatus);
   const label = (jobData.label as string) || (jobData.prompt as string)?.slice(0, 40) || '';
 
   const handleApprove = async () => {
     try {
-      await hanaFetch('/api/desk/cron', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'add', ...jobData }),
-      });
+      if (confirmId) {
+        // 新的阻塞式确认：通过 ConfirmStore resolve
+        await hanaFetch(`/api/confirm/${confirmId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'confirmed' }),
+        });
+      } else {
+        // 旧的非阻塞模式 fallback
+        await hanaFetch('/api/desk/cron', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'add', ...jobData }),
+        });
+      }
       setStatus('approved');
     } catch { /* silent */ }
   };
 
-  const handleReject = () => {
+  const handleReject = async () => {
+    if (confirmId) {
+      try {
+        await hanaFetch(`/api/confirm/${confirmId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'rejected' }),
+        });
+      } catch { /* silent */ }
+    }
     setStatus('rejected');
   };
 

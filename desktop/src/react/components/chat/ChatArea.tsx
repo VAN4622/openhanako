@@ -70,31 +70,66 @@ function PanelHost() {
 
 // ── Panel：一个 session 的原生滚动容器 ──
 
+const SCROLL_THRESHOLD = 300;
+
 const Panel = memo(function Panel({ path, active }: { path: string; active: boolean }) {
   const items = useStore(s => s.chatSessions[path]?.items || []);
   const ref = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const isAtBottom = useRef(true);
+
+  // 判断是否在底部
+  const checkAtBottom = () => {
+    const el = ref.current;
+    if (!el) return;
+    isAtBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < SCROLL_THRESHOLD;
+  };
+
+  // 滚到底
+  const scrollToBottom = () => {
+    const el = ref.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  };
+
+  // scroll 事件维护 isAtBottom 标志
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onScroll = () => checkAtBottom();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
+  // ResizeObserver：内容高度变化 + 在底部 → 自动滚
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const ro = new ResizeObserver(() => {
+      if (active && isAtBottom.current) {
+        scrollToBottom();
+      }
+    });
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, [active]);
+
+  // 首次有内容 → 滚到底
   const scrolledOnce = useRef(false);
-
-
-  // 首次有内容时滚到底
   useEffect(() => {
     if (scrolledOnce.current) return;
-    const el = ref.current;
-    if (el && items.length > 0) {
-      el.scrollTop = el.scrollHeight;
+    if (items.length > 0) {
+      scrollToBottom();
+      isAtBottom.current = true;
       scrolledOnce.current = true;
-      console.log(`[panel] ${path.slice(-12)} initial scroll to bottom: ${el.scrollTop}`);
     }
-  }, [items.length, path]);
+  }, [items.length]);
 
-  // 新消息 + 在底部附近 → 自动滚
+  // 新消息加入 → 强制 sticky（发送消息后自动跟随）
   const prevLen = useRef(items.length);
   useEffect(() => {
     if (items.length > prevLen.current && active) {
-      const el = ref.current;
-      if (el && el.scrollHeight - el.scrollTop - el.clientHeight < 300) {
-        requestAnimationFrame(() => { el.scrollTop = el.scrollHeight; });
-      }
+      isAtBottom.current = true;
+      scrollToBottom();
     }
     prevLen.current = items.length;
   }, [items.length, active]);
@@ -111,7 +146,7 @@ const Panel = memo(function Panel({ path, active }: { path: string; active: bool
         pointerEvents: active ? 'auto' : 'none',
       }}
     >
-      <div className="chat-session-messages">
+      <div ref={contentRef} className="chat-session-messages">
         {items.map((item, i) => (
           <ItemView
             key={item.type === 'message' ? item.data.id : `c-${i}`}
