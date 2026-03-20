@@ -27,6 +27,7 @@ import { createPinnedMemoryTools } from "../lib/tools/pinned-memory.js";
 import { createExperienceTools } from "../lib/tools/experience.js";
 import { createInstallSkillTool } from "../lib/tools/install-skill.js";
 import { createNotifyTool } from "../lib/tools/notify-tool.js";
+import { createUpdateSettingsTool } from "../lib/tools/update-settings-tool.js";
 import { createDelegateTool } from "../lib/tools/delegate-tool.js";
 import { ConversationManager } from "../lib/conversations/conversation-manager.js";
 import { READ_ONLY_BUILTIN_TOOLS } from "./config-coordinator.js";
@@ -228,12 +229,23 @@ export class Agent {
     );
     this._cronTool = createCronTool(this._cronStore, {
       getAutoApprove: () => this._config?.desk?.cron_auto_approve !== false,
+      confirmStore: this._engine?.confirmStore,
+      emitEvent: (event) => this._engine?._emitEvent(event, this._engine?._sessionCoord?.currentSessionPath),
+      getSessionPath: () => this._engine?._sessionCoord?.currentSessionPath,
     });
     this._presentFilesTool = createPresentFilesTool();
     this._artifactTool = createArtifactTool();
     this._browserTool = createBrowserTool();
     this._notifyTool = createNotifyTool({
       onNotify: (title, body) => this._notifyHandler?.(title, body),
+    });
+
+    // 10. 设置修改工具
+    this._updateSettingsTool = createUpdateSettingsTool({
+      getEngine: () => this._engine,
+      getConfirmStore: () => this._engine?.confirmStore,
+      getSessionPath: () => this._engine?._sessionCoord?.currentSessionPath,
+      emitEvent: (event) => this._engine?._emitEvent(event, this._engine?._sessionCoord?.currentSessionPath),
     });
 
     // 9. 频道工具 + 私信工具（需要 channelsDir 和 agentsDir）
@@ -381,6 +393,7 @@ export class Agent {
       this._browserTool,
       this._installSkillTool,
       this._notifyTool,
+      this._updateSettingsTool,
       this._delegateTool,
     ].filter(Boolean);
   }

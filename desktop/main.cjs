@@ -1646,6 +1646,9 @@ ipcMain.handle("get-server-base-url", () => serverBaseUrl);
 ipcMain.handle("get-server-token", () => serverToken);
 ipcMain.handle("get-server-mode", () => serverMode);
 ipcMain.handle("get-gateway-config", () => readGatewayConfig());
+ipcMain.handle("get-gateway-fallback-error", () => (
+  gatewayFallbackError ? { message: gatewayFallbackError.message || String(gatewayFallbackError) } : null
+));
 ipcMain.handle("save-gateway-config", (_event, config) => saveGatewayConfig(config || {}));
 ipcMain.handle("verify-gateway-config", async (_event, config) => verifyGatewayConfig(config || readGatewayConfig()));
 ipcMain.handle("get-app-version", () => app.getVersion());

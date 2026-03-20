@@ -18,7 +18,7 @@ import {
 } from "../session-stream-store.js";
 
 /** tool_start 事件只广播这些 arg 字段，避免传输完整文件内容（同步维护：chat-render-shim.ts extractToolDetail） */
-const TOOL_ARG_SUMMARY_KEYS = ["file_path", "path", "command", "pattern", "url", "query"];
+const TOOL_ARG_SUMMARY_KEYS = ["file_path", "path", "command", "pattern", "url", "query", "key", "value", "action", "type", "schedule", "prompt", "label"];
 
 /**
  * 从 Pi SDK 的 content 块中提取纯文本
@@ -76,6 +76,8 @@ export default async function chatRoute(app, { engine, hub }) {
         moodParser: new MoodParser(),
         xingParser: new XingParser(),
         isThinking: false,
+        hasOutput: false,
+        hasToolCall: false,
         titleRequested: false,
         titlePreview: "",
         ...createSessionStreamState(),
@@ -155,6 +157,7 @@ export default async function chatRoute(app, { engine, hub }) {
       const sub = event.assistantMessageEvent?.type;
 
       if (sub === "text_delta") {
+        ss.hasOutput = true;
         if (ss.isThinking) {
           ss.isThinking = false;
           emitStreamEvent(sessionPath, ss, { type: "thinking_end" });
@@ -227,6 +230,7 @@ export default async function chatRoute(app, { engine, hub }) {
       }
     } else if (event.type === "tool_execution_start") {
       if (!ss) return;
+      ss.hasToolCall = true;
       if (ss.isThinking) {
         ss.isThinking = false;
         emitStreamEvent(sessionPath, ss, { type: "thinking_end" });
@@ -316,6 +320,41 @@ export default async function chatRoute(app, { engine, hub }) {
       broadcast({ type: "devlog", text: event.text, level: event.level });
     } else if (event.type === "browser_bg_status") {
       broadcast({ type: "browser_bg_status", running: event.running, url: event.url });
+    } else if (event.type === "cron_confirmation" && event.confirmId) {
+      // 新的阻塞式 cron 确认（通过 emitEvent 触发）
+      if (!ss) return;
+      emitStreamEvent(sessionPath, ss, {
+        type: "cron_confirmation",
+        confirmId: event.confirmId,
+        jobData: event.jobData,
+      });
+    } else if (event.type === "settings_confirmation") {
+      if (!ss) return;
+      emitStreamEvent(sessionPath, ss, {
+        type: "settings_confirmation",
+        confirmId: event.confirmId,
+        settingKey: event.settingKey,
+        cardType: event.cardType,
+        currentValue: event.currentValue,
+        proposedValue: event.proposedValue,
+        options: event.options,
+        label: event.label,
+        description: event.description,
+        frontend: event.frontend,
+      });
+    } else if (event.type === "confirmation_resolved") {
+      broadcast({
+        type: "confirmation_resolved",
+        confirmId: event.confirmId,
+        action: event.action,
+        value: event.value,
+      });
+    } else if (event.type === "apply_frontend_setting") {
+      broadcast({
+        type: "apply_frontend_setting",
+        key: event.key,
+        value: event.value,
+      });
     } else if (event.type === "activity_update") {
       broadcast({ type: "activity_update", activity: event.activity });
     } else if (event.type === "notification") {
@@ -400,8 +439,15 @@ export default async function chatRoute(app, { engine, hub }) {
         }
       });
 
+      // 空回复检测：本轮没有文本输出也没有工具调用，提示用户检查配置
+      if (!ss.hasOutput && !ss.hasToolCall && isActive) {
+        broadcast({ type: "error", message: "模型未返回任何内容，请检查 API 配置和网络连接。" });
+      }
+
       emitStreamEvent(sessionPath, ss, { type: "turn_end" });
       finishSessionStream(ss);
+      ss.hasOutput = false;
+      ss.hasToolCall = false;
       ss.thinkTagParser.reset();
       ss.moodParser.reset();
       ss.xingParser.reset();

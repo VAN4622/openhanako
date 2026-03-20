@@ -30,7 +30,7 @@ const REACT_CHAT_EVENTS = new Set([
   'xing_start', 'xing_text', 'xing_end',
   'tool_start', 'tool_end', 'turn_end',
   'file_output', 'skill_activated', 'artifact',
-  'browser_screenshot', 'cron_confirmation',
+  'browser_screenshot', 'cron_confirmation', 'settings_confirmation',
   'compaction_start', 'compaction_end',
 ]);
 
@@ -237,6 +237,33 @@ export function handleServerMessage(msg: any): void {
 
     case 'error': {
       showError(msg.message);
+      break;
+    }
+
+    case 'confirmation_resolved': {
+      // 更新所有 session 中匹配 confirmId 的确认卡片状态
+      const sessions = state.chatSessions || {};
+      for (const sp of Object.keys(sessions)) {
+        useStore.getState().updateLastMessage(sp, (m: any) => {
+          if (!m.blocks) return m;
+          const updated = m.blocks.map((b: any) => {
+            if ((b.type === 'settings_confirm' || b.type === 'cron_confirm') && b.confirmId === msg.confirmId) {
+              return { ...b, status: msg.action === 'confirmed' ? 'confirmed' : 'rejected' };
+            }
+            return b;
+          });
+          return { ...m, blocks: updated };
+        });
+      }
+      break;
+    }
+
+    case 'apply_frontend_setting': {
+      if (msg.key === 'theme') {
+        (window as any).applyTheme?.(msg.value);
+        // 通知其他窗口（设置窗口等）同步主题
+        (window as any).platform?.settingsChanged?.('theme');
+      }
       break;
     }
 

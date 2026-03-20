@@ -25,7 +25,7 @@ import { useSidebarResize } from './hooks/use-sidebar-resize';
 import { applyAgentIdentity, loadAgents, loadAvatars } from './stores/agent-actions';
 import { loadSessions } from './stores/session-actions';
 import { connectWebSocket } from './services/websocket';
-import { setStatus, loadModels, applyStaticI18n } from './utils/ui-helpers';
+import { setStatus, loadModels, applyStaticI18n, showError } from './utils/ui-helpers';
 import { toSlash, baseName } from './utils/format';
 import { initJian } from './stores/desk-actions';
 import { initEditorEvents } from './stores/artifact-actions';
@@ -72,6 +72,7 @@ window.addEventListener('unhandledrejection', (e) => {
 
 async function init(): Promise<void> {
   const platform = window.platform;
+  const gatewayFallbackError = await platform.getGatewayFallbackError?.().catch(() => null);
 
   // 1. 获取 server 连接信息并存入 Zustand
   const serverPort = await platform.getServerPort();
@@ -126,16 +127,39 @@ async function init(): Promise<void> {
   // 8. 连接 WebSocket
   connectWebSocket();
 
+  document.getElementById('settingsBtn')?.addEventListener('click', () => platform.openSettings());
+  document.addEventListener('keydown', (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === ',') {
+      e.preventDefault();
+      platform.openSettings();
+    }
+  });
+
+  platform.appReady();
+  if (gatewayFallbackError?.message) {
+    showError(`远程网关不可用，已回落到本地服务：${gatewayFallbackError.message}`);
+  }
+
   // 9. 加载模型
-  await loadModels();
+  void loadModels().catch((err) => {
+    console.error('[init] loadModels failed:', err);
+  });
 
   // 10. 加载 agents + sessions
   useStore.setState({ pendingNewSession: true });
-  await loadAgents();
-  await loadSessions();
+  void (async () => {
+    try {
+      await loadAgents();
+      await loadSessions();
+    } catch (err) {
+      console.error('[init] loadAgents/loadSessions failed:', err);
+    }
+  })();
 
   // 11. 初始化书桌
-  initJian();
+  Promise.resolve().then(() => initJian()).catch((err) => {
+    console.error('[init] initJian failed:', err);
+  });
 
   // 12. 初始化拖拽附件
   initDragDrop();

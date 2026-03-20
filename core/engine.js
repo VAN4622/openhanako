@@ -141,10 +141,11 @@ export class HanaEngine {
     // ── Bridge Session Manager ──
     this._bridge = new BridgeSessionManager({
       getAgent: () => this.agent,
+      getAgentById: (id) => this._agentManager.getAgent(id),
       getModelManager: () => this._models,
       getResourceLoader: () => this._resourceLoader,
       getPreferences: () => this._readPreferences(),
-      buildTools: (cwd) => this.buildTools(cwd),
+      buildTools: (cwd, customTools, opts) => this.buildTools(cwd, customTools, opts),
       getHomeCwd: () => this.homeCwd,
       getCurrentLocalSessionPath: () => this.currentSessionPath,
     });
@@ -171,6 +172,7 @@ export class HanaEngine {
   get agent() { return this._agentMgr.agent; }
   getAgent(agentId) { return this._agentMgr.getAgent(agentId); }
   get currentAgentId() { return this._agentMgr.activeAgentId; }
+  get confirmStore() { return this._confirmStore; }
 
   // 向后兼容 getter
   get agentDir() { return this.agent?.agentDir || path.join(this.agentsDir, this.currentAgentId); }

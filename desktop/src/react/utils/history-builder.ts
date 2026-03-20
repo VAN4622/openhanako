@@ -57,7 +57,9 @@ export function buildItemsFromHistory(data: HistoryApiResponse): ChatListItem[] 
     const id = m.id || `hist-${i}`;
 
     if (m.role === 'user') {
-      const { text, files, deskContext } = parseUserAttachments(m.content);
+      // strip steer 前缀（内部标记，不应展示给用户）
+      const rawContent = (m.content || '').replace(/^（插话，无需 MOOD）\n?/, '');
+      const { text, files, deskContext } = parseUserAttachments(rawContent);
       const msg: ChatMessage = {
         id,
         role: 'user',
@@ -87,16 +89,46 @@ export function buildItemsFromHistory(data: HistoryApiResponse): ChatListItem[] 
 
       // 3. Tool calls
       if (m.toolCalls?.length) {
-        blocks.push({
-          type: 'tool_group',
-          tools: m.toolCalls.map(tc => ({
-            name: tc.name,
-            args: tc.args,
-            done: true,
-            success: true,
-          })),
-          collapsed: m.toolCalls.length > 1,
-        });
+        // 分离确认类工具和普通工具
+        const normalTools = [];
+        for (const tc of m.toolCalls) {
+          if (tc.name === 'update_settings' && tc.args) {
+            // 重建设置确认卡片（已完成状态）
+            const a = tc.args as Record<string, string>;
+            blocks.push({
+              type: 'settings_confirm',
+              confirmId: '',
+              settingKey: a.key || '',
+              cardType: (a.key === 'sandbox' || a.key === 'memory.enabled' ? 'toggle' : 'list') as any,
+              currentValue: '',
+              proposedValue: a.value || '',
+              label: a.key || '',
+              status: 'confirmed',
+            } as any);
+          } else if (tc.name === 'cron' && tc.args && (tc.args as any).action === 'add') {
+            // 重建 cron 确认卡片（已完成状态）
+            const a = tc.args as Record<string, any>;
+            blocks.push({
+              type: 'cron_confirm',
+              jobData: { type: a.type, schedule: a.schedule, prompt: a.prompt, label: a.label },
+              status: 'approved',
+            } as any);
+          } else {
+            normalTools.push(tc);
+          }
+        }
+        if (normalTools.length) {
+          blocks.push({
+            type: 'tool_group',
+            tools: normalTools.map(tc => ({
+              name: tc.name,
+              args: tc.args,
+              done: true,
+              success: true,
+            })),
+            collapsed: normalTools.length > 1,
+          });
+        }
       }
 
       // 4. 主文本（去掉 mood 和 xing 后的内容）

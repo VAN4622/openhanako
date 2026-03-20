@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld("hana", {
   getServerToken: () => ipcRenderer.invoke("get-server-token"),
   getServerMode: () => ipcRenderer.invoke("get-server-mode"),
   getGatewayConfig: () => ipcRenderer.invoke("get-gateway-config"),
+  getGatewayFallbackError: () => ipcRenderer.invoke("get-gateway-fallback-error"),
   saveGatewayConfig: (config) => ipcRenderer.invoke("save-gateway-config", config),
   verifyGatewayConfig: (config) => ipcRenderer.invoke("verify-gateway-config", config),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),

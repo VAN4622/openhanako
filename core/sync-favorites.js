@@ -37,14 +37,16 @@ import { createRequire } from "module";
 const _require = createRequire(import.meta.url);
 const _knownModels = _require("../lib/known-models.json");
 
+const DEFAULT_CONTEXT_WINDOW = 128_000;
+
 function generateModelDefaults(modelId) {
   const known = _knownModels[modelId];
   const entry = {
     id: modelId,
     name: known?.name || humanizeName(modelId),
     input: ["text", "image"],
+    contextWindow: known?.context || DEFAULT_CONTEXT_WINDOW,
   };
-  if (known?.context) entry.contextWindow = known.context;
   if (known?.maxOutput) entry.maxTokens = known.maxOutput;
   return entry;
 }
@@ -190,15 +192,18 @@ export function syncFavoritesToModelsJson(configPath, opts = {}) {
     }
     const effectiveApiKey = apiKey || "local";
 
-    // 已有的模型 metadata（按 id 索引）
+    // 已有的模型 metadata（按 id 索引，normalize 掉 models/ 前缀）
     const existingModels = new Map();
     for (const m of (modelsJson.providers?.[provName]?.models || [])) {
-      existingModels.set(m.id, m);
+      const normalizedId = m.id?.startsWith("models/") ? m.id.slice(7) : m.id;
+      existingModels.set(normalizedId, { ...m, id: normalizedId });
     }
 
     // 组装模型列表
     const modelList = [];
-    for (const mid of targetModelIds) {
+    for (let mid of targetModelIds) {
+      // Gemini OpenAI 兼容 API 返回 "models/gemini-xxx" 格式，strip 前缀
+      if (mid.startsWith("models/")) mid = mid.slice(7);
       if (existingModels.has(mid)) {
         const existing = { ...existingModels.get(mid) };
         const known = _knownModels[mid];

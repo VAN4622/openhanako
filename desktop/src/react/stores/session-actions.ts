@@ -55,7 +55,8 @@ export async function loadSessions(): Promise<void> {
     useStore.setState({ sessions });
 
     if (sessions.length > 0 && !s.currentSessionPath && !s.pendingNewSession) {
-      useStore.setState({ currentSessionPath: sessions[0].path });
+      // 首次加载：走完整的 switchSession 确保后端同步 + 消息加载
+      await switchSession(sessions[0].path);
     }
   } catch { /* ignore */ }
 }

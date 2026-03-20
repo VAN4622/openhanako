@@ -62,3 +62,6 @@ function loadSavedFont() {
   const enabled = saved !== "0";
   document.body.classList.toggle("font-sans", !enabled);
 }
+
+// 暴露给 WS 事件处理器（设置工具远程切换主题用）
+window.applyTheme = setTheme;

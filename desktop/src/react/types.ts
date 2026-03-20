@@ -103,6 +103,7 @@ export interface PlatformApi {
   getServerToken(): Promise<string>;
   getServerMode?(): Promise<'local' | 'remote' | 'web' | null>;
   getGatewayConfig?(): Promise<{ mode: 'local' | 'remote'; baseUrl: string; token: string }>;
+  getGatewayFallbackError?(): Promise<{ message: string } | null>;
   saveGatewayConfig?(config: { mode: 'local' | 'remote'; baseUrl: string; token: string }): Promise<{ mode: 'local' | 'remote'; baseUrl: string; token: string }>;
   verifyGatewayConfig?(config: { mode: 'local' | 'remote'; baseUrl: string; token: string }): Promise<unknown>;
   openSettings(tab?: string): void;
