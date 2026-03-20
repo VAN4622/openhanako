@@ -53,6 +53,15 @@ export function RemoteDirectoryPicker({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const loadWithFallback = async (targetPath?: string | null) => {
+    try {
+      return await loadDirectories(targetPath);
+    } catch (err) {
+      if (!targetPath) throw err;
+      return loadDirectories();
+    }
+  };
+
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
@@ -61,7 +70,7 @@ export function RemoteDirectoryPicker({
       setLoading(true);
       setError('');
       try {
-        const data = await loadDirectories(initialPath);
+        const data = await loadWithFallback(initialPath);
         if (!cancelled) setListing(data);
       } catch (err: any) {
         if (!cancelled) {
@@ -93,7 +102,7 @@ export function RemoteDirectoryPicker({
     setLoading(true);
     setError('');
     try {
-      const data = await loadDirectories(targetPath);
+      const data = await loadWithFallback(targetPath);
       setListing(data);
     } catch (err: any) {
       setError(err?.message || (zh ? '目录加载失败' : 'Failed to load directories'));
