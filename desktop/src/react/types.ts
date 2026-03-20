@@ -99,7 +99,12 @@ export type TabType = 'chat' | 'channels';
 // ── Platform API 类型声明 ──
 export interface PlatformApi {
   getServerPort(): Promise<string>;
+  getServerBaseUrl?(): Promise<string>;
   getServerToken(): Promise<string>;
+  getServerMode?(): Promise<'local' | 'remote' | 'web' | null>;
+  getGatewayConfig?(): Promise<{ mode: 'local' | 'remote'; baseUrl: string; token: string }>;
+  saveGatewayConfig?(config: { mode: 'local' | 'remote'; baseUrl: string; token: string }): Promise<{ mode: 'local' | 'remote'; baseUrl: string; token: string }>;
+  verifyGatewayConfig?(config: { mode: 'local' | 'remote'; baseUrl: string; token: string }): Promise<unknown>;
   openSettings(tab?: string): void;
   openBrowserViewer(url?: string, theme?: string): void;
   selectFolder(): Promise<string | null>;
@@ -110,6 +115,8 @@ export interface PlatformApi {
   unwatchFile(filePath: string): Promise<boolean>;
   onFileChanged(callback: (filePath: string) => void): void;
   readFileBase64(path: string): Promise<string | null>;
+  getPathInfo?(path: string): Promise<{ exists: boolean; isDirectory: boolean; isFile: boolean; size: number | null } | null>;
+  saveTempBase64File?(fileName: string, base64Data: string): Promise<string | null>;
   readDocxHtml(path: string): Promise<string | null>;
   readXlsxHtml(path: string): Promise<string | null>;
   openEditorWindow(data: { filePath: string; title: string; type: string; language?: string | null }): void;

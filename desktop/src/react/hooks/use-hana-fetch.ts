@@ -1,4 +1,5 @@
 import { useStore } from '../stores';
+import { buildHanaUrl, joinServerUrl } from '../utils/server-url';
 
 const DEFAULT_TIMEOUT = 30_000;
 
@@ -6,10 +7,8 @@ const DEFAULT_TIMEOUT = 30_000;
  * 构建带认证的 Hana Server URL
  */
 export function hanaUrl(path: string): string {
-  const { serverPort, serverToken } = useStore.getState();
-  const sep = path.includes('?') ? '&' : '?';
-  const tokenParam = serverToken ? `${sep}token=${serverToken}` : '';
-  return `http://127.0.0.1:${serverPort}${path}${tokenParam}`;
+  const { serverBaseUrl, serverToken } = useStore.getState();
+  return buildHanaUrl(serverBaseUrl, serverToken, path);
 }
 
 /**
@@ -21,7 +20,7 @@ export async function hanaFetch(
   path: string,
   opts: RequestInit & { timeout?: number } = {},
 ): Promise<Response> {
-  const { serverPort, serverToken } = useStore.getState();
+  const { serverBaseUrl, serverToken } = useStore.getState();
   const headers: Record<string, string> = { ...(opts.headers as Record<string, string>) };
   if (serverToken) {
     headers['Authorization'] = `Bearer ${serverToken}`;
@@ -32,13 +31,28 @@ export async function hanaFetch(
   const timer = setTimeout(() => controller.abort(), timeout);
 
   try {
-    const res = await fetch(`http://127.0.0.1:${serverPort}${path}`, {
+    const res = await fetch(joinServerUrl(serverBaseUrl, path), {
       ...fetchOpts,
       headers,
       signal: controller.signal,
     });
     if (!res.ok) {
-      throw new Error(`hanaFetch ${path}: ${res.status} ${res.statusText}`);
+      let detail = '';
+      try {
+        const text = await res.text();
+        if (text) {
+          try {
+            const parsed = JSON.parse(text);
+            detail = parsed?.error || parsed?.message || text;
+          } catch {
+            detail = text;
+          }
+        }
+      } catch {
+        // Ignore secondary read failures and fall back to status text only.
+      }
+      const suffix = detail ? ` - ${detail}` : '';
+      throw new Error(`hanaFetch ${path}: ${res.status} ${res.statusText}${suffix}`);
     }
     return res;
   } finally {

@@ -8,23 +8,24 @@
 import mk from '@traptitech/markdown-it-katex';
 import 'katex/dist/katex.min.css';
 
-interface MarkdownIt {
+interface MarkdownItInstance {
   render(src: string): string;
-  use(plugin: any, ...args: any[]): MarkdownIt;
+  use(plugin: any, ...args: any[]): MarkdownItInstance;
   core: { ruler: { after: (name: string, ruleName: string, fn: (state: unknown) => void) => void } };
 }
 
-let _md: MarkdownIt | null = null;
+let _md: MarkdownItInstance | null = null;
 
-export function getMd(): MarkdownIt {
+export function getMd(): MarkdownItInstance {
   if (_md) return _md;
-  _md = window.markdownit({
+  const md = window.markdownit({
     html: false,
     breaks: true,
     linkify: true,
     typographer: true,
-  });
-  _md.use(mk);
+  }) as unknown as MarkdownItInstance;
+  md.use(mk);
+  _md = md;
   return _md;
 }
 

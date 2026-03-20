@@ -208,7 +208,7 @@ function ActivityCard({
         <img
           className="act-card-avatar"
           src={avatarSrc}
-          onError={e => { (e.target as HTMLImageElement).onerror = null; (e.target as HTMLImageElement).src = yuanFallbackAvatar(ag?.yuan); }}
+          onError={e => { (e.target as HTMLImageElement).onerror = null; (e.target as HTMLImageElement).src = yuanFallbackAvatar(ag?.yuan || 'hanako'); }}
           draggable={false}
         />
         <span className="act-card-agent-name">{a.agentName || agentName}</span>

@@ -30,6 +30,7 @@ import { toSlash, baseName } from './utils/format';
 import { initJian } from './stores/desk-actions';
 import { initEditorEvents } from './stores/artifact-actions';
 import { WindowControls } from './components/WindowControls';
+import type { ActivePanel } from './types';
 
 declare const i18n: {
   locale: string;
@@ -50,8 +51,8 @@ document.addEventListener('drop', (e) => e.preventDefault());
 
 // ── __hanaLog：前端日志上报 ──
 window.__hanaLog = function (level: string, module: string, message: string) {
-  const { serverPort } = useStore.getState();
-  if (!serverPort) return;
+  const { serverBaseUrl } = useStore.getState();
+  if (!serverBaseUrl) return;
   hanaFetch('/api/log', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -74,10 +75,12 @@ async function init(): Promise<void> {
 
   // 1. 获取 server 连接信息并存入 Zustand
   const serverPort = await platform.getServerPort();
+  const serverBaseUrl = await platform.getServerBaseUrl?.() || (serverPort ? `http://127.0.0.1:${serverPort}` : null);
   const serverToken = await platform.getServerToken();
-  useStore.setState({ serverPort, serverToken });
+  const serverMode = await platform.getServerMode?.() || (serverBaseUrl ? 'local' : null);
+  useStore.setState({ serverPort, serverBaseUrl, serverToken, serverMode });
 
-  if (!serverPort) {
+  if (!serverBaseUrl) {
     setStatus(t('status.serverNotReady'), false);
     platform.appReady();
     return;
@@ -145,7 +148,7 @@ async function init(): Promise<void> {
 
   // 14. 浮动面板按钮
   const $ = (sel: string) => document.querySelector(sel);
-  const _togglePanel = (panel: string) => {
+  const _togglePanel = (panel: Exclude<ActivePanel, null>) => {
     const s = useStore.getState();
     s.setActivePanel(s.activePanel === panel ? null : panel);
   };
