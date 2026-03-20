@@ -146,6 +146,7 @@ export class HanaEngine {
       getPreferences: () => this._readPreferences(),
       buildTools: (cwd) => this.buildTools(cwd),
       getHomeCwd: () => this.homeCwd,
+      getCurrentLocalSessionPath: () => this.currentSessionPath,
     });
 
     // Pi SDK resources（init 时填充）

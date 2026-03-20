@@ -22,6 +22,7 @@
   "scripts": {
     "start": "npm run build:renderer && node scripts/launch.js electron",
     "start:dev": "node scripts/launch.js electron-dev",
+    "start:dev:utf8": "powershell -ExecutionPolicy Bypass -File scripts/start-dev-utf8.ps1",
     "start:vite": "node scripts/launch.js electron-vite",
     "dev:renderer": "vite --config vite.config.ts",
     "build:renderer": "vite build --config vite.config.ts",

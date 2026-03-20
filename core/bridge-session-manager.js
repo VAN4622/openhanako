@@ -11,10 +11,32 @@ import {
   SessionManager,
   SettingsManager,
 } from "@mariozechner/pi-coding-agent";
-import { debugLog } from "../lib/debug-log.js";
+import { createModuleLogger, debugLog } from "../lib/debug-log.js";
+import { createConversationScopedResourceLoader } from "../lib/conversations/conversation-manager.js";
 import { READ_ONLY_BUILTIN_TOOLS } from "./config-coordinator.js";
 
 const STEER_PREFIX = "（插话，无需 MOOD）\n";
+const log = createModuleLogger("bridge-session");
+
+export function chooseAutoLinkTarget(localInfo, bridgeInfo) {
+  const localConversationId = localInfo?.conversationId || null;
+  const bridgeConversationId = bridgeInfo?.conversationId || null;
+  if (!localConversationId || !bridgeConversationId) return null;
+  if (localConversationId === bridgeConversationId) return null;
+
+  const localSeq = localInfo?.conversationLastSeq || 0;
+  const bridgeSeq = bridgeInfo?.conversationLastSeq || 0;
+
+  if (bridgeSeq === 0) {
+    return { target: "bridge", conversationId: localConversationId };
+  }
+
+  if (localSeq === 0) {
+    return { target: "local", conversationId: bridgeConversationId };
+  }
+
+  return null;
+}
 
 export class BridgeSessionManager {
   /**
@@ -29,6 +51,45 @@ export class BridgeSessionManager {
   constructor(deps) {
     this._deps = deps;
     this._activeSessions = new Map();
+  }
+
+  async _autoLinkOwnerSession(sessionKey, meta = {}) {
+    const agent = this._deps.getAgent();
+    const cm = agent?.conversationManager;
+    const currentSessionPath = this._deps.getCurrentLocalSessionPath?.() || null;
+    if (!cm || !currentSessionPath) return null;
+
+    await cm.ensureLocalSession(currentSessionPath, { autoLinkCandidate: true });
+    await cm.ensureBridgeSession(sessionKey, {
+      guest: false,
+      meta: { ...(meta || {}), autoLinkCandidate: true },
+    });
+
+    const localInfo = cm.getBindingInfoForLocalSession(currentSessionPath);
+    const bridgeInfo = cm.getBindingInfoForBridgeSession(sessionKey, { guest: false });
+    const decision = chooseAutoLinkTarget(localInfo, bridgeInfo);
+    if (!decision) return null;
+
+    if (decision.target === "bridge") {
+      await cm.linkBridgeSession(sessionKey, decision.conversationId, {
+        meta: {
+          ...(meta || {}),
+          autoLinked: true,
+          autoLinkedFrom: "current_local_session",
+          linkedSessionPath: currentSessionPath,
+        },
+      });
+    } else {
+      await cm.linkLocalSession(currentSessionPath, decision.conversationId, {
+        autoLinked: true,
+        autoLinkedFrom: "owner_bridge_session",
+        linkedSessionKey: sessionKey,
+      });
+    }
+
+    log.log(`auto-link ${sessionKey} -> ${decision.conversationId}`);
+
+    return decision.conversationId;
   }
 
   /** 活跃 bridge sessions（供 bridge-manager abort 用） */
@@ -117,6 +178,14 @@ export class BridgeSessionManager {
     const existingPath = existingFile ? path.join(bridgeDir, existingFile) : null;
 
     try {
+      if (!opts.guest) {
+        try {
+          await this._autoLinkOwnerSession(sessionKey, meta);
+        } catch (err) {
+          console.warn(`[bridge-session] auto-link failed (${sessionKey}):`, err.message);
+        }
+      }
+
       let mgr;
       if (existingPath) {
         try {
@@ -126,6 +195,9 @@ export class BridgeSessionManager {
         }
       }
       const homeCwd = this._deps.getHomeCwd() || process.cwd();
+      const promptContext = !opts.guest
+        ? await agent.conversationManager?.prepareBridgePromptContext(sessionKey, { guest: false })
+        : null;
       if (!mgr) {
         mgr = SessionManager.create(homeCwd, sessionDir);
       }
@@ -163,6 +235,13 @@ export class BridgeSessionManager {
         const bridgeReadOnly = !!prefs.bridge?.readOnly;
         const bridgeCwd = homeCwd;
         const { tools: baseTools, customTools: baseCustomTools } = this._deps.buildTools(bridgeCwd);
+        const resourceLoader = createConversationScopedResourceLoader(this._deps.getResourceLoader());
+        if (promptContext?.messageContent || promptContext?.systemPrompt) {
+          resourceLoader.setConversationContext(promptContext);
+          log.log(
+            `shared context ${sessionKey} pending=${promptContext.pendingCount || 0} conversation=${promptContext.conversationId || "?"}`,
+          );
+        }
 
         const bridgeTools = bridgeReadOnly
           ? baseTools.filter(t => READ_ONLY_BUILTIN_TOOLS.includes(t.name))
@@ -185,7 +264,7 @@ export class BridgeSessionManager {
         sessionOpts = {
           model: ownerModel,
           thinkingLevel: mm.resolveThinkingLevel(prefs?.thinking_level || "auto"),
-          resourceLoader: this._deps.getResourceLoader(),
+          resourceLoader,
           tools: bridgeTools,
           customTools: bridgeCustomTools,
           settingsManager: this._createSettings(ownerModel),
@@ -200,7 +279,17 @@ export class BridgeSessionManager {
         ...sessionOpts,
       });
 
+      try {
+        await agent.conversationManager?.ensureBridgeSession(sessionKey, {
+          guest: !!opts.guest,
+          meta: { ...(meta || {}), subDir },
+        });
+      } catch (err) {
+        console.warn(`[bridge-session] conversation binding init failed (${sessionKey}):`, err.message);
+      }
+
       this._activeSessions.set(sessionKey, session);
+      const beforeCount = Array.isArray(session.messages) ? session.messages.length : 0;
 
       // 捕获文本输出
       let capturedText = "";
@@ -236,6 +325,35 @@ export class BridgeSessionManager {
           index[sessionKey] = entry;
         }
         this.writeIndex(index);
+      }
+
+      if (promptContext?.uptoSeq && (promptContext.messageContent || promptContext.systemPrompt)) {
+        try {
+          await agent.conversationManager?.markBridgePromptContextSeen(sessionKey, promptContext.uptoSeq, {
+            guest: false,
+          });
+          log.log(`shared context consumed ${sessionKey} upto=${promptContext.uptoSeq}`);
+        } catch (err) {
+          console.warn(`[bridge-session] conversation cursor update failed (${sessionKey}):`, err.message);
+        }
+      }
+
+      const newMessages = Array.isArray(session.messages)
+        ? session.messages.slice(beforeCount)
+        : [];
+      if (newMessages.length > 0) {
+        try {
+          await agent.conversationManager?.appendBridgeSessionMessages(sessionKey, newMessages, {
+            guest: !!opts.guest,
+            meta: {
+              ...(meta || {}),
+              subDir,
+              sessionPath: sessionPath || null,
+            },
+          });
+        } catch (err) {
+          console.warn(`[bridge-session] conversation append failed (${sessionKey}):`, err.message);
+        }
       }
 
       return capturedText.trim() || null;

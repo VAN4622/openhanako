@@ -14,6 +14,7 @@ import {
 } from "@mariozechner/pi-coding-agent";
 import { createModuleLogger } from "../lib/debug-log.js";
 import { BrowserManager } from "../lib/browser/browser-manager.js";
+import { createConversationScopedResourceLoader } from "../lib/conversations/conversation-manager.js";
 
 const log = createModuleLogger("session");
 
@@ -91,6 +92,7 @@ export class SessionCoordinator {
     creatingAgent.setMemoryEnabled(memoryEnabled);
 
     const { tools: sessionTools, customTools: sessionCustomTools } = this._d.buildTools(effectiveCwd);
+    const resourceLoader = createConversationScopedResourceLoader(this._d.getResourceLoader());
     const { session } = await createAgentSession({
       cwd: effectiveCwd,
       sessionManager: sessionMgr,
@@ -98,7 +100,7 @@ export class SessionCoordinator {
       modelRegistry: models.modelRegistry,
       model: models.currentModel,
       thinkingLevel: models.resolveThinkingLevel(this._d.getPrefs().getThinkingLevel()),
-      resourceLoader: this._d.getResourceLoader(),
+      resourceLoader,
       tools: sessionTools,
       customTools: sessionCustomTools,
     });
@@ -113,6 +115,16 @@ export class SessionCoordinator {
       this._d.emitEvent(event, sessionPath);
     });
 
+    if (sessionPath) {
+      try {
+        await agent.conversationManager?.ensureLocalSession(sessionPath, {
+          cwd: effectiveCwd,
+        });
+      } catch (err) {
+        log.warn(`conversation binding init failed: ${err.message}`);
+      }
+    }
+
     // 存入 map（SessionEntry）
     const mapKey = sessionPath || `_anon_${Date.now()}`;
     const old = this._sessions.get(mapKey);
@@ -123,6 +135,7 @@ export class SessionCoordinator {
       memoryEnabled,
       lastTouchedAt: Date.now(),
       unsub,
+      resourceLoader,
     });
 
     // LRU 淘汰：按 lastTouchedAt 排序，跳过 streaming 和焦点 session
@@ -196,16 +209,55 @@ export class SessionCoordinator {
     if (!this._session) throw new Error("没有活跃的 session，请先调用 createSession()");
     this._sessionStarted = true;
     const sp = this._session.sessionManager?.getSessionFile?.();
+    let entry = null;
     if (sp) {
-      const entry = this._sessions.get(sp);
+      entry = this._sessions.get(sp);
       if (entry) entry.lastTouchedAt = Date.now();
     }
+    const agent = entry ? this._d.getAgentById(entry.agentId) || this._d.getAgent() : this._d.getAgent();
     const promptOpts = opts?.images?.length ? { images: opts.images } : undefined;
-    await this._session.prompt(text, promptOpts);
+    const promptContext = sp
+      ? await agent.conversationManager?.prepareLocalPromptContext(sp)
+      : null;
+    const hasSharedContext = Boolean(promptContext?.messageContent || promptContext?.systemPrompt);
+    const beforeCount = Array.isArray(this._session.messages) ? this._session.messages.length : 0;
+
+    if (entry?.resourceLoader && hasSharedContext) {
+      entry.resourceLoader.setConversationContext(promptContext);
+    }
+
+    try {
+      await this._session.prompt(text, promptOpts);
+    } finally {
+      if (entry?.resourceLoader && hasSharedContext) {
+        entry.resourceLoader.clearConversationContext();
+      }
+    }
+
     if (sp) {
-      const entry = this._sessions.get(sp);
-      const agent = entry ? this._d.getAgentById(entry.agentId) : this._d.getAgent();
       agent?._memoryTicker?.notifyTurn(sp);
+    }
+
+    if (sp && promptContext?.uptoSeq && hasSharedContext) {
+      try {
+        await agent.conversationManager?.markLocalPromptContextSeen(sp, promptContext.uptoSeq);
+        log.log(`shared context consumed upto=${promptContext.uptoSeq} session=${path.basename(sp)}`);
+      } catch (err) {
+        log.warn(`conversation cursor update failed: ${err.message}`);
+      }
+    }
+
+    const newMessages = Array.isArray(this._session.messages)
+      ? this._session.messages.slice(beforeCount)
+      : [];
+    if (sp && newMessages.length > 0) {
+      try {
+        await agent.conversationManager?.appendLocalSessionMessages(sp, newMessages, {
+          cwd: this._session.sessionManager?.getCwd?.() || null,
+        });
+      } catch (err) {
+        log.warn(`conversation append failed: ${err.message}`);
+      }
     }
   }
 
@@ -234,9 +286,45 @@ export class SessionCoordinator {
     entry.lastTouchedAt = Date.now();
     if (sessionPath === this.currentSessionPath) this._sessionStarted = true;
     const promptOpts = opts?.images?.length ? { images: opts.images } : undefined;
-    await entry.session.prompt(text, promptOpts);
     const agent = this._d.getAgentById(entry.agentId) || this._d.getAgent();
+    const promptContext = await agent.conversationManager?.prepareLocalPromptContext(sessionPath);
+    const hasSharedContext = Boolean(promptContext?.messageContent || promptContext?.systemPrompt);
+    const beforeCount = Array.isArray(entry.session.messages) ? entry.session.messages.length : 0;
+
+    if (entry.resourceLoader && hasSharedContext) {
+      entry.resourceLoader.setConversationContext(promptContext);
+    }
+
+    try {
+      await entry.session.prompt(text, promptOpts);
+    } finally {
+      if (entry.resourceLoader && hasSharedContext) {
+        entry.resourceLoader.clearConversationContext();
+      }
+    }
+
     agent?._memoryTicker?.notifyTurn(sessionPath);
+
+    if (promptContext?.uptoSeq && hasSharedContext) {
+      try {
+        await agent.conversationManager?.markLocalPromptContextSeen(sessionPath, promptContext.uptoSeq);
+      } catch (err) {
+        log.warn(`conversation cursor update failed: ${err.message}`);
+      }
+    }
+
+    const newMessages = Array.isArray(entry.session.messages)
+      ? entry.session.messages.slice(beforeCount)
+      : [];
+    if (newMessages.length > 0) {
+      try {
+        await agent.conversationManager?.appendLocalSessionMessages(sessionPath, newMessages, {
+          cwd: entry.session.sessionManager?.getCwd?.() || null,
+        });
+      } catch (err) {
+        log.warn(`conversation append failed: ${err.message}`);
+      }
+    }
   }
 
   steerSession(sessionPath, text) {

@@ -693,7 +693,7 @@ function createSettingsWindow(tab, theme) {
     settingsWindow.loadURL(`${process.env.VITE_DEV_URL}/settings.html`);
   } else {
     const builtSettings = path.join(__dirname, "dist-renderer", "settings.html");
-    if (!isDev && fs.existsSync(builtSettings)) {
+    if (fs.existsSync(builtSettings)) {
       settingsWindow.loadFile(builtSettings);
     } else {
       settingsWindow.loadFile(path.join(__dirname, "src", "settings.html"));
