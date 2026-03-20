@@ -657,6 +657,36 @@ function saveWindowState() {
 }
 
 // ── 创建主窗口 ──
+function buildRendererPageUrl(filename, query = null) {
+  const baseUrl = process.env.VITE_DEV_URL;
+  if (!baseUrl) return null;
+  const url = new URL(`/${filename}`, baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`);
+  if (query && typeof query === "object") {
+    for (const [key, value] of Object.entries(query)) {
+      if (value != null) url.searchParams.set(key, String(value));
+    }
+  }
+  return url.toString();
+}
+
+function loadRendererPage(window, { filename, fallbackFilename = filename, query = null }) {
+  const isDev = process.argv.includes("--dev");
+  const devUrl = buildRendererPageUrl(filename, query);
+  if (isDev && devUrl) {
+    window.loadURL(devUrl);
+    return;
+  }
+
+  const builtPath = path.join(__dirname, "dist-renderer", filename);
+  if (fs.existsSync(builtPath)) {
+    window.loadFile(builtPath, query ? { query } : undefined);
+    return;
+  }
+
+  const fallbackPath = path.join(__dirname, "src", fallbackFilename);
+  window.loadFile(fallbackPath, query ? { query } : undefined);
+}
+
 function createMainWindow() {
   const saved = loadWindowState();
 
@@ -689,17 +719,7 @@ function createMainWindow() {
   }
 
   // Dev 模式走 Vite dev server，prod 走构建产物，fallback 到源码
-  const isDev = process.argv.includes("--dev");
-  if (isDev && process.env.VITE_DEV_URL) {
-    mainWindow.loadURL(`${process.env.VITE_DEV_URL}/index.html`);
-  } else {
-    const builtIndex = path.join(__dirname, "dist-renderer", "index.html");
-    if (!isDev && fs.existsSync(builtIndex)) {
-      mainWindow.loadFile(builtIndex);
-    } else {
-      mainWindow.loadFile(path.join(__dirname, "src", "index.html"));
-    }
-  }
+  loadRendererPage(mainWindow, { filename: "index.html" });
 
   // 前端初始化超时保护：30 秒内没收到 app-ready 就强制显示（防止用户卡在空白）
   const initTimeout = setTimeout(() => {
@@ -808,7 +828,7 @@ function createDevToolsWindow() {
     },
   });
 
-  devToolsWindow.loadFile(path.join(__dirname, "src", "devtools.html"));
+  loadRendererPage(devToolsWindow, { filename: "devtools.html" });
 
   devToolsWindow.on("close", (e) => {
     if (!isQuitting) {
@@ -861,17 +881,7 @@ function createSettingsWindow(tab, theme) {
   });
 
   // Dev 模式走 Vite dev server，prod 走构建产物，fallback 到源码
-  const isDev = process.argv.includes("--dev");
-  if (isDev && process.env.VITE_DEV_URL) {
-    settingsWindow.loadURL(`${process.env.VITE_DEV_URL}/settings.html`);
-  } else {
-    const builtSettings = path.join(__dirname, "dist-renderer", "settings.html");
-    if (fs.existsSync(builtSettings)) {
-      settingsWindow.loadFile(builtSettings);
-    } else {
-      settingsWindow.loadFile(path.join(__dirname, "src", "settings.html"));
-    }
-  }
+  loadRendererPage(settingsWindow, { filename: "settings.html" });
 
   // 窗口加载完后切换到指定 tab
   if (tab) {
@@ -1591,7 +1601,7 @@ function createOnboardingWindow(query = {}) {
     },
   });
 
-  onboardingWindow.loadFile(path.join(__dirname, "src", "onboarding.html"), { query });
+  loadRendererPage(onboardingWindow, { filename: "onboarding.html", query });
 
   onboardingWindow.once("ready-to-show", () => {
     // 关闭 splash，显示 onboarding
@@ -1720,16 +1730,10 @@ ipcMain.handle("open-editor-window", (_event, data) => {
   });
 
   // Dev 模式优先走 Vite dev server；否则优先走构建产物，最后回退到无 bundler 的 legacy 页面
-  const isDev = process.argv.includes("--dev");
-  const builtEditor = path.join(__dirname, "dist-renderer", "editor-window.html");
-  const fallbackEditor = path.join(__dirname, "src", "editor-window-fallback.html");
-  if (isDev && process.env.VITE_DEV_URL) {
-    editorWindow.loadURL(`${process.env.VITE_DEV_URL}/editor-window.html`);
-  } else if (!isDev && fs.existsSync(builtEditor)) {
-    editorWindow.loadFile(builtEditor);
-  } else {
-    editorWindow.loadFile(fallbackEditor);
-  }
+  loadRendererPage(editorWindow, {
+    filename: "editor-window.html",
+    fallbackFilename: "editor-window-fallback.html",
+  });
 
   editorWindow.webContents.on("did-finish-load", () => {
     if (_editorFileData && editorWindow && !editorWindow.isDestroyed()) {
