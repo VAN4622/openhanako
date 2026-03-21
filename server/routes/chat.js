@@ -338,6 +338,7 @@ export default async function chatRoute(app, { engine, hub }) {
         currentValue: event.currentValue,
         proposedValue: event.proposedValue,
         options: event.options,
+        optionLabels: event.optionLabels || null,
         label: event.label,
         description: event.description,
         frontend: event.frontend,

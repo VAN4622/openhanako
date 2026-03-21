@@ -14,7 +14,6 @@ import { ActivityPanel } from './components/ActivityPanel';
 import { AutomationPanel } from './components/AutomationPanel';
 import { BridgePanel } from './components/BridgePanel';
 
-const DevToolsPanel = lazy(() => import('./components/DevToolsPanel').then(m => ({ default: m.DevToolsPanel })));
 const SkillViewerOverlay = lazy(() => import('./components/SkillViewerOverlay').then(m => ({ default: m.SkillViewerOverlay })));
 import { PreviewPanel } from './components/PreviewPanel';
 import { BrowserCard } from './components/BrowserCard';
@@ -226,13 +225,7 @@ async function init(): Promise<void> {
     }
   });
 
-  // 20. DevTools 面板切换（主进程快捷键 → 渲染进程）
-  (window as any).hana?.onToggleDevtools?.(() => {
-    const s = useStore.getState();
-    s.setActivePanel(s.activePanel === 'devtools' ? null : 'devtools');
-  });
-
-  // 21. Skill Viewer overlay（主进程 / 设置窗口 → 渲染进程）
+  // 20. Skill Viewer overlay（主进程 / 设置窗口 → 渲染进程）
   (window as any).hana?.onShowSkillViewer?.((data: any) => {
     useStore.setState({ skillViewerData: data });
   });
@@ -393,7 +386,7 @@ function App() {
                       <line x1="5" y1="12" x2="19" y2="12"></line>
                     </svg>
                   </button>
-                  <button className="sidebar-action-btn" id="settingsBtn" title={t('settings.title')} onClick={() => platform.openSettings()}>
+                  <button className="sidebar-action-btn" id="settingsBtn" title={t('settings.title')} onClick={() => window.platform.openSettings()}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                       <circle cx="12" cy="12" r="3"></circle>
                       <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -428,7 +421,7 @@ function App() {
                 <span>{t('automation.title')}</span>
                 <AutomationBadge />
               </button>
-              <button className={`sidebar-activity-bar browser-bg-bar${browserRunning ? '' : ' hidden'}`} id="browserBgBar" title={t('browser.backgroundHint')} onClick={() => platform?.openBrowserViewer?.()}>
+              <button className={`sidebar-activity-bar browser-bg-bar${browserRunning ? '' : ' hidden'}`} id="browserBgBar" title={t('browser.backgroundHint')} onClick={() => window.platform?.openBrowserViewer?.()}>
                 <svg className="browser-bg-globe" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                   <circle cx="12" cy="12" r="10"></circle>
                   <line x1="2" y1="12" x2="22" y2="12"></line>
@@ -481,7 +474,6 @@ function App() {
 
           <div className="chat-area" id="chatArea">
             <WelcomeContainer />
-            <div className="messages" id="messages"></div>
             <ChatArea />
           </div>
 
@@ -527,7 +519,6 @@ function App() {
           <ActivityPanel />
           <AutomationPanel />
           <BridgePanel />
-          <Suspense fallback={null}><DevToolsPanel /></Suspense>
         </MainContentDrag>
 
         <PreviewPanel />
@@ -575,6 +566,7 @@ function App() {
           state={floatCard}
           onMouseEnter={cancelFloatHide}
           onMouseLeave={scheduleFloatHide}
+          onAction={hideFloat}
         />
       )}
 

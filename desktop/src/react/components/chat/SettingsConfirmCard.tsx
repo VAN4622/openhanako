@@ -5,7 +5,7 @@
  * 用户可编辑后确认/取消，通过 REST API resolve 阻塞的 tool Promise。
  */
 
-import { memo, useState, useCallback } from 'react';
+import { memo, useState, useCallback, useMemo } from 'react';
 import { hanaFetch } from '../../hooks/use-hana-fetch';
 import { useI18n } from '../../hooks/use-i18n';
 
@@ -16,10 +16,48 @@ interface Props {
   currentValue: string;
   proposedValue: string;
   options?: string[];
+  optionLabels?: Record<string, string>;
   label: string;
   description?: string;
   status: 'pending' | 'confirmed' | 'rejected' | 'timeout';
 }
+
+const THEME_I18N: Record<string, string> = {
+  'warm-paper': 'settings.appearance.warmPaper',
+  'midnight': 'settings.appearance.midnight',
+  'high-contrast': 'settings.appearance.highContrast',
+  'grass-aroma': 'settings.appearance.grassAroma',
+  'contemplation': 'settings.appearance.contemplation',
+  'absolutely': 'settings.appearance.absolutely',
+  'delve': 'settings.appearance.delve',
+  'deep-think': 'settings.appearance.deepThink',
+  'auto': 'settings.appearance.auto',
+};
+
+const THINKING_I18N: Record<string, string> = {
+  'auto': 'settings.agent.thinkingLevels.auto',
+  'off': 'settings.agent.thinkingLevels.off',
+  'low': 'settings.agent.thinkingLevels.low',
+  'medium': 'settings.agent.thinkingLevels.medium',
+  'high': 'settings.agent.thinkingLevels.high',
+};
+
+const LOCALE_LABELS: Record<string, string> = {
+  'zh-CN': '简体中文', 'zh-TW': '繁體中文', 'ja': '日本語', 'ko': '한국어', 'en': 'English',
+};
+
+const SETTING_LABEL_KEYS: Record<string, string> = {
+  'sandbox': 'toolDef.updateSettings.sandbox',
+  'locale': 'toolDef.updateSettings.locale',
+  'timezone': 'toolDef.updateSettings.timezone',
+  'thinking_level': 'toolDef.updateSettings.thinkingBudget',
+  'memory.enabled': 'toolDef.updateSettings.memory',
+  'agent.name': 'toolDef.updateSettings.agentName',
+  'user.name': 'toolDef.updateSettings.userName',
+  'home_folder': 'toolDef.updateSettings.workingDir',
+  'theme': 'toolDef.updateSettings.theme',
+  'models.chat': 'toolDef.updateSettings.chatModel',
+};
 
 function toggleLabel(from: string, to: string, t: (k: string) => string): string {
   const f = from === 'true' ? t('common.on') : t('common.off');
@@ -28,10 +66,26 @@ function toggleLabel(from: string, to: string, t: (k: string) => string): string
 }
 
 export const SettingsConfirmCard = memo(function SettingsConfirmCard(props: Props) {
-  const { confirmId, cardType, currentValue, proposedValue, options, label, description, status: initialStatus } = props;
+  const { confirmId, settingKey, cardType, currentValue, proposedValue, options, optionLabels: externalLabels, label, description, status: initialStatus } = props;
   const { t } = useI18n();
   const [status, setStatus] = useState(initialStatus);
   const [editValue, setEditValue] = useState(proposedValue);
+
+  // 本地化标签：优先用外部传入的，否则卡片自行查 i18n
+  const optionLabels = useMemo(() => {
+    if (externalLabels && Object.keys(externalLabels).length) return externalLabels;
+    if (settingKey === 'theme') return Object.fromEntries(Object.entries(THEME_I18N).map(([k, v]) => [k, t(v)]));
+    if (settingKey === 'thinking_level') return Object.fromEntries(Object.entries(THINKING_I18N).map(([k, v]) => [k, t(v)]));
+    if (settingKey === 'locale') return LOCALE_LABELS;
+    return undefined;
+  }, [externalLabels, settingKey, t]);
+
+  // 设置项标签：优先用外部传入的，否则自行查 i18n
+  const displayLabel = useMemo(() => {
+    if (label && label !== settingKey) return label;
+    const key = SETTING_LABEL_KEYS[settingKey];
+    return key ? t(key) : label;
+  }, [label, settingKey, t]);
 
   const handleConfirm = useCallback(async () => {
     try {
@@ -61,7 +115,7 @@ export const SettingsConfirmCard = memo(function SettingsConfirmCard(props: Prop
       return (
         <div className="settings-confirm-card done">
           <div className="settings-confirm-header">
-            <span className="settings-confirm-label">{label}</span>
+            <span className="settings-confirm-label">{displayLabel}</span>
             <div className={`hana-toggle${editValue === 'true' ? ' on' : ''}`} style={{ pointerEvents: 'none' }}>
               <div className="hana-toggle-thumb" />
             </div>
@@ -70,9 +124,10 @@ export const SettingsConfirmCard = memo(function SettingsConfirmCard(props: Prop
         </div>
       );
     }
-    const statusText = status === 'confirmed' ? `${label} → ${editValue}`
-      : status === 'rejected' ? t('common.changeRejected').replace('{label}', label)
-      : t('common.changeTimeout').replace('{label}', label);
+    const displayValue = optionLabels?.[editValue] || editValue;
+    const statusText = status === 'confirmed' ? `${displayLabel} → ${displayValue}`
+      : status === 'rejected' ? t('common.changeRejected').replace('{label}', displayLabel)
+      : t('common.changeTimeout').replace('{label}', displayLabel);
     const statusClass = status === 'confirmed' ? 'confirmed' : 'rejected';
     return (
       <div className="settings-confirm-card done">
@@ -88,7 +143,7 @@ export const SettingsConfirmCard = memo(function SettingsConfirmCard(props: Prop
         <>
           <div className="settings-confirm-header" onClick={() => setEditValue(editValue === 'true' ? 'false' : 'true')} style={{ cursor: 'pointer' }}>
             <div>
-              <div className="settings-confirm-label">{label}</div>
+              <div className="settings-confirm-label">{displayLabel}</div>
               {description && <div className="settings-confirm-desc">{description}</div>}
             </div>
             <div className={`hana-toggle${editValue === 'true' ? ' on' : ''}`}>
@@ -99,7 +154,7 @@ export const SettingsConfirmCard = memo(function SettingsConfirmCard(props: Prop
         </>
       ) : (
         <>
-          <div className="settings-confirm-label">{label}</div>
+          <div className="settings-confirm-label">{displayLabel}</div>
           {description && <div className="settings-confirm-desc">{description}</div>}
           <div className="settings-confirm-control">
             {cardType === 'list' && options && (
@@ -110,7 +165,7 @@ export const SettingsConfirmCard = memo(function SettingsConfirmCard(props: Prop
                     className={`settings-confirm-option${opt === editValue ? ' selected' : ''}`}
                     onClick={() => setEditValue(opt)}
                   >
-                    {opt === editValue ? '✓ ' : ''}{opt}
+                    {opt === editValue ? '✓ ' : ''}{optionLabels?.[opt] || opt}
                   </button>
                 ))}
               </div>

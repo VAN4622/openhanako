@@ -9,9 +9,6 @@ function maskKey(key) {
   return key.slice(0, 4) + "..." + key.slice(-4);
 }
 
-// OAuth provider 白名单：只暴露合规可用的（其他 coding plan 会封号）
-const ALLOWED_OAUTH = new Set(["minimax", "openai-codex"]);
-
 export default async function providersRoute(app, { engine }) {
 
   // ── Provider Summary ──
@@ -22,15 +19,33 @@ export default async function providersRoute(app, { engine }) {
    */
   app.get("/api/providers/summary", async () => {
     const providers = getAllProviders(engine.configPath);
+
+    // ProviderRegistry 作为 OAuth 判断的权威来源
+    const provRegistry = engine.providerRegistry;
+
+    // OAuth 白名单：authJsonKey 集合（auth.json 中的 key，如 minimax / openai-codex）
+    const ALLOWED_OAUTH = provRegistry
+      ? new Set(provRegistry.getOAuthProviderIds().map(id => provRegistry.getAuthJsonKey(id)))
+      : new Set(["minimax", "openai-codex"]); // fallback
+
+    // authJsonKey → registryId 映射（如 minimax → minimax-oauth）
+    const authKeyToRegistryId = new Map();
+    if (provRegistry) {
+      for (const id of provRegistry.getOAuthProviderIds()) {
+        const authKey = provRegistry.getAuthJsonKey(id);
+        if (authKey !== id) authKeyToRegistryId.set(authKey, id);
+      }
+    }
+
     const favorites = engine.readFavorites();
     const favSet = new Set(favorites);
 
-    // OAuth provider 信息
+    // OAuth provider 登录状态（Pi SDK AuthStorage，key 是 authJsonKey 如 minimax）
     const oauthProviders = engine.authStorage?.getOAuthProviders?.() || [];
-    const oauthMap = new Map();
+    const oauthLoginMap = new Map();
     for (const p of oauthProviders) {
       const cred = engine.authStorage.get(p.id);
-      oauthMap.set(p.id, { name: p.name, loggedIn: cred?.type === "oauth" });
+      oauthLoginMap.set(p.id, { name: p.name, loggedIn: cred?.type === "oauth" });
     }
 
     // OAuth 自定义模型
@@ -46,10 +61,39 @@ export default async function providersRoute(app, { engine }) {
 
     const result = {};
 
+    // 判断 provider 是否为 OAuth 类型（优先用 ProviderRegistry，回退到 oauthLoginMap）
+    function isOAuthProvider(name) {
+      if (provRegistry) {
+        // 直接匹配 registry ID（如 minimax-oauth）
+        if (provRegistry.isOAuth(name)) return true;
+        // 或者 name 是某个 OAuth provider 的 authJsonKey（如 minimax）
+        const registryId = authKeyToRegistryId.get(name);
+        if (registryId && provRegistry.isOAuth(registryId)) return true;
+        return false;
+      }
+      return oauthLoginMap.has(name);
+    }
+
+    // 获取 OAuth 登录信息（oauthLoginMap 用 authJsonKey 索引）
+    function getOAuthLoginInfo(name) {
+      if (oauthLoginMap.has(name)) return oauthLoginMap.get(name);
+      // name 可能是 registry ID（如 minimax-oauth），查对应的 authJsonKey
+      if (provRegistry) {
+        const authKey = provRegistry.getAuthJsonKey(name);
+        if (authKey !== name && oauthLoginMap.has(authKey)) return oauthLoginMap.get(authKey);
+      }
+      return null;
+    }
+
+    // Coding Plan 判断（id 以 -coding 结尾的 provider）
+    function isCodingPlan(name) {
+      return name.endsWith("-coding");
+    }
+
     // 先处理 providers.yaml 中的 provider（保持顺序）
     for (const [name, p] of Object.entries(providers)) {
-      const isOAuth = oauthMap.has(name);
-      const oauthInfo = oauthMap.get(name);
+      const isOAuth = isOAuthProvider(name);
+      const oauthInfo = getOAuthLoginInfo(name);
       const sdkIds = sdkByProvider.get(name) || [];
       // 合并：providers.yaml models + SDK 发现的模型
       const allModels = [...new Set([...(p.models || []), ...sdkIds])];
@@ -66,13 +110,14 @@ export default async function providersRoute(app, { engine }) {
         has_credentials: !!(p.api_key || (isOAuth && oauthInfo?.loggedIn)),
         logged_in: isOAuth ? !!oauthInfo?.loggedIn : undefined,
         supports_oauth: isOAuth && ALLOWED_OAUTH.has(name),
+        is_coding_plan: isCodingPlan(name),
         can_delete: !isOAuth || Object.prototype.hasOwnProperty.call(providers, name),
       };
     }
 
     // 追加 OAuth-only provider（有 auth.json 但没在 providers.yaml 里）
     // 只暴露白名单内的，其他 coding plan 会封号
-    for (const [id, info] of oauthMap) {
+    for (const [id, info] of oauthLoginMap) {
       if (result[id]) continue;
       if (!ALLOWED_OAUTH.has(id)) continue;
       const sdkIds = sdkByProvider.get(id) || [];
@@ -90,6 +135,30 @@ export default async function providersRoute(app, { engine }) {
         supports_oauth: true,
         can_delete: false,
       };
+    }
+
+    // 追加 ProviderRegistry 中已声明但尚未出现的 provider（未配置状态）
+    // 让用户在设置页看到所有可用供应商，点击即可配置
+    if (provRegistry) {
+      for (const [id, entry] of provRegistry.getAll()) {
+        if (result[id]) continue;
+        if (entry.authType === "oauth") continue; // OAuth provider 走上面的白名单逻辑
+        const sdkIds = sdkByProvider.get(id) || [];
+        result[id] = {
+          type: "api-key",
+          display_name: entry.displayName || id,
+          base_url: entry.baseUrl || "",
+          api: entry.api || "",
+          api_key_masked: "",
+          models: sdkIds,
+          custom_models: [],
+          has_credentials: false,
+          logged_in: undefined,
+          supports_oauth: false,
+          is_coding_plan: isCodingPlan(id),
+          can_delete: false,
+        };
+      }
     }
 
     return { providers: result, favorites };
@@ -165,13 +234,21 @@ export default async function providersRoute(app, { engine }) {
       } catch {}
     }
 
-    // Anthropic 格式没有 /models 端点，直接从 Pi SDK 内置模型列表返回
+    // Anthropic 格式没有 /models 端点，从 Pi SDK + ProviderRegistry builtinModels 返回
     if (api === "anthropic-messages") {
       const registryModels = engine.modelRegistry
         ? engine.modelRegistry.getAll().filter((m) => m.provider === name)
         : [];
       if (registryModels.length > 0) {
         return { source: "registry", models: normalizeRegistryModels(registryModels) };
+      }
+      // fallback：从 ProviderRegistry 的 builtinModels 声明返回
+      const provEntry = engine.providerRegistry?.get(name);
+      if (provEntry?.builtinModels?.length > 0) {
+        return {
+          source: "builtin",
+          models: provEntry.builtinModels.map(id => ({ id, name: id, context: null, maxOutput: null })),
+        };
       }
       return { error: "No built-in models found for this provider", models: [] };
     }

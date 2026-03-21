@@ -38,9 +38,10 @@ export function ProvidersTab() {
   // selectedProviderId 可以是 summary 里的，也可以是未注册的 preset
   const selected = selectedProviderId;
 
-  // 分组：OAuth → 分割线 → 已注册 API Key → 未注册 presets → 自定义（非 preset 非 OAuth）
+  // 分组：OAuth → Coding Plan → API Key
   const oauthProviders = providerIds.filter(id => providersSummary[id].supports_oauth);
-  const registeredApiKey = providerIds.filter(id => !providersSummary[id].supports_oauth);
+  const codingPlanProviders = providerIds.filter(id => !providersSummary[id].supports_oauth && providersSummary[id].is_coding_plan);
+  const registeredApiKey = providerIds.filter(id => !providersSummary[id].supports_oauth && !providersSummary[id].is_coding_plan);
   const registeredSet = new Set(providerIds);
   // 排除 minimax（OAuth 管）和已注册的
   const unregisteredPresets = PROVIDER_PRESETS.filter(p =>
@@ -94,15 +95,24 @@ export function ProvidersTab() {
       <div className="pv-layout">
         {/* ── 左栏 ── */}
         <div className="pv-list">
-          <div className="pv-list-title">{t('settings.tabs.providers')}</div>
-          {/* OAuth */}
+          {/* OAuth 分组 */}
           {oauthProviders.length > 0 && (
             <>
+              <div className="pv-list-section-title">OAuth</div>
               {oauthProviders.map(renderRegistered)}
-              <div className="pv-list-divider" />
             </>
           )}
 
+          {/* Coding Plan 分组 */}
+          {codingPlanProviders.length > 0 && (
+            <>
+              <div className="pv-list-section-title">Coding Plan</div>
+              {codingPlanProviders.map(renderRegistered)}
+            </>
+          )}
+
+          {/* API Key 分组 */}
+          <div className="pv-list-section-title">API</div>
           {/* 已注册 preset providers */}
           {presetProviders.map(renderRegistered)}
 
@@ -110,12 +120,7 @@ export function ProvidersTab() {
           {unregisteredPresets.map(renderUnregistered)}
 
           {/* 自定义 providers */}
-          {customProviders.length > 0 && (
-            <>
-              <div className="pv-list-divider" />
-              {customProviders.map(renderRegistered)}
-            </>
-          )}
+          {customProviders.map(renderRegistered)}
 
           {/* 添加自定义供应商 */}
           <AddCustomButton

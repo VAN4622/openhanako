@@ -342,6 +342,7 @@ class StreamBufferManager {
             currentValue: msg.currentValue,
             proposedValue: msg.proposedValue,
             options: msg.options,
+            optionLabels: msg.optionLabels,
             label: msg.label,
             description: msg.description,
             frontend: msg.frontend,

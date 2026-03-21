@@ -93,18 +93,22 @@ export function buildItemsFromHistory(data: HistoryApiResponse): ChatListItem[] 
         const normalTools = [];
         for (const tc of m.toolCalls) {
           if (tc.name === 'update_settings' && tc.args) {
-            // 重建设置确认卡片（已完成状态）
             const a = tc.args as Record<string, string>;
-            blocks.push({
-              type: 'settings_confirm',
-              confirmId: '',
-              settingKey: a.key || '',
-              cardType: (a.key === 'sandbox' || a.key === 'memory.enabled' ? 'toggle' : 'list') as any,
-              currentValue: '',
-              proposedValue: a.value || '',
-              label: a.key || '',
-              status: 'confirmed',
-            } as any);
+            // 仅 apply 调用（或旧格式无 action）重建卡片，search 调用跳过
+            if (a.action === 'apply' || (!a.action && a.key && a.value)) {
+              blocks.push({
+                type: 'settings_confirm',
+                confirmId: '',
+                settingKey: a.key || '',
+                cardType: (a.key === 'sandbox' || a.key === 'memory.enabled' ? 'toggle' : 'list') as any,
+                currentValue: '',
+                proposedValue: a.value || '',
+                label: a.key || '',
+                status: 'confirmed',
+              } as any);
+            } else {
+              normalTools.push(tc);
+            }
           } else if (tc.name === 'cron' && tc.args && (tc.args as any).action === 'add') {
             // 重建 cron 确认卡片（已完成状态）
             const a = tc.args as Record<string, any>;
