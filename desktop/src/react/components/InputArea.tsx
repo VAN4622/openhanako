@@ -728,6 +728,8 @@ function ContextRing() {
       setTokens(storeContextTokens);
       setContextWindow(storeContextWindow);
       setPercent(storeContextPercent);
+    } else {
+      setTokens(null);
     }
     setCompacting(storeCompacting);
   }, [storeContextTokens, storeContextWindow, storeContextPercent, storeCompacting]);
