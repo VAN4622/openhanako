@@ -631,6 +631,16 @@ export class Agent {
         "**Do not** launch the browser when web_search or web_fetch can do the job. Browser startup is expensive and opens a window that interrupts the user."
     );
 
+    // 设置工具路由
+    parts.push(isZh
+      ? "\n## 设置修改\n\n" +
+        "用户提到修改设置而未指明具体软件时，默认指本应用的设置。\n" +
+        "用户要求修改偏好设置（包括但不限于：外观主题、语言地区、模型选择、安全权限、记忆功能、个人信息、工作目录）时，使用 update_settings 工具。不要搜索网页，不要编辑配置文件。意图明确时直接 apply，不确定时先 search。"
+      : "\n## Settings Changes\n\n" +
+        "When the user mentions changing settings without specifying a particular application, assume they mean this application.\n" +
+        "When the user asks to change preferences (including but not limited to: appearance/theme, language/region, model selection, security/permissions, memory, personal info, working directory), use the update_settings tool. Do not search the web or edit config files. When intent is clear, apply directly; when unsure, search first."
+    );
+
     // 主动技能获取引导（仅在 allow_github_fetch 开启时注入）
     // learn_skills 从全局 preferences 读取
     const learnCfg = this._engine?.getLearnSkills?.() || this._config?.capabilities?.learn_skills || {};

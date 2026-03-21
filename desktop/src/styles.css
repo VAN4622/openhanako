@@ -1825,6 +1825,7 @@ html[data-platform="linux"] .tb-toggle-right {
     align-items: flex-start;
     padding-left: var(--space-sm);
     margin-left: 2px;
+    position: relative;
 }
 
 /* 头像行（在消息上方） */
@@ -2007,7 +2008,7 @@ html[data-platform="linux"] .tb-toggle-right {
     color: var(--hana-text-muted);
     line-height: 1;
 }
-.message.assistant:hover .msg-copy-btn { opacity: 0.6; }
+.message-group.assistant:hover .msg-copy-btn { opacity: 0.6; }
 .msg-copy-btn:hover { opacity: 1 !important; color: var(--hana-text); }
 .msg-copy-btn.copied { opacity: 1 !important; color: var(--hana-accent, #4a9); }
 
@@ -2425,7 +2426,7 @@ html[data-platform="linux"] .tb-toggle-right {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
 }
 .settings-confirm-status {
-    font-size: 0.82rem;
+    font-size: 0.92rem;
     padding: var(--space-xs) 0;
     color: var(--text-muted);
 }
