@@ -534,15 +534,26 @@
 /* ── Bridge Panel ── */
 
 .bridgePanelWide .floatingPanelInner {
-    width: 80%;
-    max-width: 700px;
-    min-width: 420px;
+    width: 88%;
+    max-width: 860px;
+    min-width: 520px;
     height: 85%;
 }
 
 .bridgeTabs {
     display: flex;
+    align-items: center;
     gap: 2px;
+    min-width: 0;
+    flex: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+}
+
+.bridgeTabs::-webkit-scrollbar {
+    display: none;
 }
 
 .bridgeTab {
@@ -558,6 +569,8 @@
     cursor: pointer;
     border-radius: var(--radius-sm);
     transition: color 0.15s, background 0.15s;
+    white-space: nowrap;
+    flex-shrink: 0;
 }
 
 .bridgeTab:hover {
@@ -586,7 +599,7 @@
 }
 
 .bridgeSidebar {
-    width: 180px;
+    width: 220px;
     flex-shrink: 0;
     border-right: 1px solid var(--overlay-light);
     overflow-y: auto;

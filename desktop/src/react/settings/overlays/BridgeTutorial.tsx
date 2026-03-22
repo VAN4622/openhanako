@@ -16,6 +16,7 @@ export function BridgeTutorial() {
 
   const tgSteps: string[] = t('settings.bridge.tutorialTgSteps') || [];
   const fsSteps: string[] = t('settings.bridge.tutorialFsSteps') || [];
+  const wxSteps: string[] = t('settings.bridge.tutorialWxSteps') || [];
 
   return (
     <div className="bridge-tutorial-overlay" onClick={(e) => { if (e.target === e.currentTarget) close(); }}>
@@ -41,6 +42,14 @@ export function BridgeTutorial() {
             <h4 className="bridge-tutorial-section-title">{t('settings.bridge.feishu')}</h4>
             <ol className="bridge-tutorial-steps">
               {Array.isArray(fsSteps) && fsSteps.map((step, i) => (
+                <li key={i} dangerouslySetInnerHTML={{ __html: step }} />
+              ))}
+            </ol>
+          </section>
+          <section className="bridge-tutorial-section">
+            <h4 className="bridge-tutorial-section-title">{t('settings.bridge.weixin')}</h4>
+            <ol className="bridge-tutorial-steps">
+              {Array.isArray(wxSteps) && wxSteps.map((step, i) => (
                 <li key={i} dangerouslySetInnerHTML={{ __html: step }} />
               ))}
             </ol>

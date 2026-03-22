@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import QRCode from 'qrcode';
 import { useSettingsStore } from '../store';
 import { hanaFetch } from '../api';
 import { t } from '../helpers';
@@ -13,9 +14,10 @@ interface BridgeStatus {
   feishu: any;
   whatsapp: any;
   qq: any;
+  weixin: any;
   readOnly: boolean;
-  knownUsers: { telegram?: any[]; feishu?: any[]; whatsapp?: any[]; qq?: any[] };
-  owner: { telegram?: string; feishu?: string; whatsapp?: string; qq?: string };
+  knownUsers: { telegram?: any[]; feishu?: any[]; whatsapp?: any[]; qq?: any[]; weixin?: any[] };
+  owner: { telegram?: string; feishu?: string; whatsapp?: string; qq?: string; weixin?: string };
 }
 
 export function BridgeTab() {
@@ -60,6 +62,13 @@ export function BridgeTab() {
   // QQ fields
   const [qqAppId, setQqAppId] = useState('');
   const [qqAppSecret, setQqAppSecret] = useState('');
+  // Weixin official fields
+  const [weixinBaseUrl, setWeixinBaseUrl] = useState('');
+  const [weixinQrUrl, setWeixinQrUrl] = useState('');
+  const [weixinLoginSessionKey, setWeixinLoginSessionKey] = useState('');
+  const [weixinLoginMessage, setWeixinLoginMessage] = useState('');
+  const [weixinLoggingIn, setWeixinLoggingIn] = useState(false);
+  const weixinQrCanvasRef = useRef<HTMLCanvasElement | null>(null);
 
   const loadStatus = async () => {
     try {
@@ -69,12 +78,78 @@ export function BridgeTab() {
       // 回填非敏感值
       if (data.feishu?.appId && !fsAppId) setFsAppId(data.feishu.appId);
       if (data.qq?.appID && !qqAppId) setQqAppId(data.qq.appID);
+      if (data.weixin?.baseUrl) setWeixinBaseUrl(data.weixin.baseUrl);
     } catch (err) {
       console.error('[bridge] load status failed:', err);
     }
   };
 
   useEffect(() => { loadStatus(); }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void loadStatus();
+    }, 5000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!weixinLoginSessionKey) return;
+    let cancelled = false;
+
+    const poll = async () => {
+      while (!cancelled) {
+        try {
+          const res = await hanaFetch('/api/bridge/weixin/login/wait', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionKey: weixinLoginSessionKey,
+              baseUrl: weixinBaseUrl,
+            }),
+            timeout: 40_000,
+          });
+          const data = await res.json();
+          if (cancelled) return;
+          setWeixinLoginMessage(data.message || '');
+          if (data.connected) {
+            setWeixinLoggingIn(false);
+            setWeixinLoginSessionKey('');
+            setWeixinQrUrl('');
+            showToast(data.message || t('settings.bridge.connected'), 'success');
+            await loadStatus();
+            return;
+          }
+          if (data.expired) {
+            setWeixinLoggingIn(false);
+            setWeixinLoginSessionKey('');
+            showToast(data.message || t('settings.bridge.weixinNeedLogin'), 'error');
+            return;
+          }
+        } catch (err: any) {
+          if (cancelled) return;
+          setWeixinLoginMessage(err.message || '');
+        }
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+      }
+    };
+
+    void poll();
+    return () => { cancelled = true; };
+  }, [weixinLoginSessionKey, weixinBaseUrl]);
+
+  useEffect(() => {
+    const value = weixinQrUrl.trim();
+    const canvas = weixinQrCanvasRef.current;
+    if (!canvas || !value || /^data:image\//i.test(value)) {
+      return;
+    }
+
+    void QRCode.toCanvas(canvas, value, {
+      margin: 1,
+      width: 180,
+    }).catch(() => {});
+  }, [weixinQrUrl]);
 
   const saveBridgeConfig = async (platform_: string, credentials: any, enabled?: boolean) => {
     try {
@@ -131,7 +206,41 @@ export function BridgeTab() {
   const fsInfo = status?.feishu || {};
   const waInfo = status?.whatsapp || {};
   const qqInfo = status?.qq || {};
+  const wxInfo = status?.weixin || {};
   const readOnly = !!status?.readOnly;
+  const startWeixinLogin = async () => {
+    try {
+      setWeixinLoggingIn(true);
+      const res = await hanaFetch('/api/bridge/weixin/login/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ baseUrl: weixinBaseUrl }),
+      });
+      const data = await res.json();
+      setWeixinQrUrl(data.qrcodeUrl || '');
+      setWeixinLoginSessionKey(data.sessionKey || '');
+      setWeixinLoginMessage(data.message || '');
+    } catch (err: any) {
+      setWeixinLoggingIn(false);
+      showToast(t('settings.saveFailed') + ': ' + err.message, 'error');
+    }
+  };
+
+  const logoutWeixin = async () => {
+    try {
+      await hanaFetch('/api/bridge/weixin/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      setWeixinQrUrl('');
+      setWeixinLoginSessionKey('');
+      setWeixinLoginMessage('');
+      showToast(t('settings.saved'), 'success');
+      await loadStatus();
+    } catch (err: any) {
+      showToast(t('settings.saveFailed') + ': ' + err.message, 'error');
+    }
+  };
 
   return (
     <div className={`${styles['settings-tab-content']} ${styles['active']}`} data-tab="bridge">
@@ -340,6 +449,91 @@ export function BridgeTab() {
           users={status?.knownUsers?.qq || []}
           currentOwner={status?.owner?.qq}
           onChange={(userId) => setOwner('qq', userId)}
+        />
+      </section>
+
+      {/* 微信 */}
+      <section className={styles['settings-section']}>
+        <h2 className={styles['settings-section-title']}>{t('settings.bridge.weixin')}</h2>
+        <div className="bridge-platform-header">
+          <BridgeStatusDot status={wxInfo.status} />
+          <BridgeStatusText status={wxInfo.status} error={wxInfo.error} />
+          <Toggle
+            on={!!wxInfo.enabled}
+            onChange={async (on) => {
+              if (on && !wxInfo.configured) {
+                showToast(t('settings.bridge.weixinNeedLogin'), 'error');
+                return;
+              }
+              await saveBridgeConfig('weixin', {
+                baseUrl: weixinBaseUrl.trim() || wxInfo.baseUrl,
+              }, on);
+            }}
+          />
+        </div>
+        <div className={styles['settings-field']}>
+          <label className={styles['settings-field-label']}>{t('settings.bridge.weixinBaseUrl')}</label>
+          <input
+            className={styles['settings-input']}
+            type="text"
+            value={weixinBaseUrl}
+            onChange={(e) => setWeixinBaseUrl(e.target.value)}
+            onBlur={async () => {
+              if (weixinBaseUrl.trim()) {
+                await saveBridgeConfig('weixin', { baseUrl: weixinBaseUrl.trim() }, undefined);
+              }
+            }}
+          />
+          <span className={styles['settings-field-hint']}>{t('settings.bridge.weixinHint')}</span>
+        </div>
+        <div className={styles['settings-field']}>
+          <label className={styles['settings-field-label']}>{t('settings.bridge.weixinAccountId')}</label>
+          <input className={styles['settings-input']} type="text" value={wxInfo.accountId || ''} readOnly />
+        </div>
+        <div className={styles['settings-field']}>
+          <label className={styles['settings-field-label']}>{t('settings.bridge.weixinUserId')}</label>
+          <input className={styles['settings-input']} type="text" value={wxInfo.userId || ''} readOnly />
+        </div>
+        <div className={styles['settings-field']}>
+          <div className="bridge-input-row">
+            <button className="bridge-test-btn" onClick={startWeixinLogin} disabled={weixinLoggingIn}>
+              {t('settings.bridge.weixinLogin')}
+            </button>
+            <button
+              className="bridge-test-btn"
+              onClick={logoutWeixin}
+              disabled={!wxInfo.configured}
+            >
+              {t('settings.bridge.weixinLogout')}
+            </button>
+          </div>
+          {weixinQrUrl && (
+            <div style={{ marginTop: 12 }}>
+              {/^(data:image\/)/i.test(weixinQrUrl.trim()) ? (
+                <img
+                  src={weixinQrUrl}
+                  alt="weixin login qr"
+                  style={{ width: 180, height: 180, borderRadius: 12, background: '#fff', padding: 8 }}
+                />
+              ) : (
+                <canvas
+                  ref={weixinQrCanvasRef}
+                  width={180}
+                  height={180}
+                  style={{ width: 180, height: 180, borderRadius: 12, background: '#fff', padding: 8 }}
+                />
+              )}
+              <div className={styles['settings-field-hint']} style={{ marginTop: 8 }}>
+                {weixinLoginMessage || t('settings.bridge.weixinScanHint')}
+              </div>
+            </div>
+          )}
+        </div>
+        <OwnerSelect
+          platform_="weixin"
+          users={status?.knownUsers?.weixin || []}
+          currentOwner={status?.owner?.weixin}
+          onChange={(userId) => setOwner('weixin', userId)}
         />
       </section>
 

@@ -101,11 +101,12 @@ export class Hub {
       persist,
       from,
       to,
+      agentId,
       onDelta,
       images,
       sessionPath,
     } = opts;
-    const o = { sessionKey, role, ephemeral, meta, isGroup, cwd, model, persist, from, to, onDelta, images, sessionPath };
+    const o = { sessionKey, role, ephemeral, meta, isGroup, cwd, model, persist, from, to, agentId, onDelta, images, sessionPath };
 
     // 路由表：按顺序匹配，第一条命中即执行。
     // 优先级通过位置保证，新增路由在此处显式插入，不依赖散落在各处的 if 顺序。
@@ -126,7 +127,12 @@ export class Hub {
       },
       { // Bridge owner
         match: o => o.sessionKey && !o.ephemeral,
-        handle: () => this._engine.executeExternalMessage(text, o.sessionKey, o.meta, { guest: false, agentId: o.agentId, onDelta: o.onDelta }),
+        handle: () => this._engine.executeExternalMessage(text, o.sessionKey, o.meta, {
+          guest: false,
+          agentId: o.agentId,
+          onDelta: o.onDelta,
+          images: o.images,
+        }),
       },
       { // 隔离执行（cron/heartbeat/channel）
         match: o => o.ephemeral,

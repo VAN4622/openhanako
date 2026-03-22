@@ -142,7 +142,7 @@ export class HanaEngine {
     // ── Bridge Session Manager ──
     this._bridge = new BridgeSessionManager({
       getAgent: () => this.agent,
-      getAgentById: (id) => this._agentManager.getAgent(id),
+      getAgentById: (id) => this._agentMgr.getAgent(id),
       getModelManager: () => this._models,
       getResourceLoader: () => this._resourceLoader,
       getPreferences: () => this._readPreferences(),
@@ -312,6 +312,7 @@ export class HanaEngine {
   saveBridgeIndex(i) { return this._bridge.writeIndex(i); }
   async executeExternalMessage(p, sk, m, o) { return this._bridge.executeExternalMessage(p, sk, m, o); }
   injectBridgeMessage(sk, t) { return this._bridge.injectMessage(sk, t); }
+  consumeBridgePresentedFiles(sk) { return this._bridge.consumePresentedFiles(sk); }
 
   // ════════════════════════════
   //  Skills（→ SkillManager）

@@ -813,6 +813,15 @@
       "qqAppId": "App ID",
       "qqAppSecret": "App Secret",
       "qqHint": "Get from QQ Bot Open Platform (q.qq.com/qqbot)",
+      "weixin": "Weixin",
+      "weixinBaseUrl": "Base URL",
+      "weixinHint": "Tencent official OpenClaw Weixin API base URL. Usually the default is fine.",
+      "weixinAccountId": "Bot ID",
+      "weixinUserId": "User ID",
+      "weixinLogin": "Sign in with QR",
+      "weixinLogout": "Sign out",
+      "weixinNeedLogin": "Please sign in to Weixin first",
+      "weixinScanHint": "Scan the QR code with Weixin and confirm on your phone",
       "connected": "Connected",
       "disconnected": "Not connected",
       "error": "Connection failed",
@@ -850,6 +859,11 @@
         "Click \"Add Event\", add <code>im.message.receive_v1</code> (receive messages)",
         "Important: Go to \"Version Management\", create and publish a version first (long connection config requires a published app)",
         "Paste the App ID and App Secret into the input fields above and turn on the switch"
+      ],
+      "tutorialWxSteps": [
+        "Keep the default base URL in \"Weixin\" and click \"Sign in with QR\"",
+        "Scan the QR code with Weixin and confirm on your phone",
+        "After sign-in succeeds, send Hanako one message first, then you can choose \"Which account is you\" in settings"
       ],
       "whatsappHint": "Coming soon"
     }

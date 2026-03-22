@@ -813,6 +813,15 @@
       "qqAppId": "App ID",
       "qqAppSecret": "App Secret",
       "qqHint": "从 QQ 机器人开放平台（q.qq.com/qqbot）获取",
+      "weixin": "微信",
+      "weixinBaseUrl": "接口地址",
+      "weixinHint": "使用腾讯官方 OpenClaw 微信接口地址，默认无需修改。",
+      "weixinAccountId": "Bot ID",
+      "weixinUserId": "用户 ID",
+      "weixinLogin": "扫码登录",
+      "weixinLogout": "退出登录",
+      "weixinNeedLogin": "请先完成微信登录",
+      "weixinScanHint": "请使用微信扫码并在手机上确认登录",
       "connected": "已连接",
       "disconnected": "未连接",
       "error": "连接失败",
@@ -850,6 +859,11 @@
         "点击「添加事件」，添加 <code>im.message.receive_v1</code>（接收消息）",
         "重要：进入「版本管理与发布」，先创建并发布一个版本（长连接配置需要应用已发布才能保存）",
         "将 App ID 和 App Secret 粘贴到上方输入框，打开开关即可"
+      ],
+      "tutorialWxSteps": [
+        "在“微信”中保持默认接口地址，点击“扫码登录”",
+        "使用微信扫描二维码，并在手机上确认登录",
+        "登录成功后，先给 Hanako 发一条消息，之后即可在设置中选择“哪个账号是你”"
       ],
       "whatsappHint": "即将支持"
     }

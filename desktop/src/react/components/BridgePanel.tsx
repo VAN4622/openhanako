@@ -21,6 +21,7 @@ interface BridgeMessage {
 interface StatusData {
   telegram?: { status: string; configured?: boolean };
   feishu?: { status: string; configured?: boolean };
+  weixin?: { status: string; configured?: boolean };
   [key: string]: { status: string; configured?: boolean } | undefined;
 }
 
@@ -167,6 +168,7 @@ export function BridgePanel() {
   const fsStatus = statusData.feishu?.status;
   const waStatus = statusData.whatsapp?.status;
   const qqStatus = statusData.qq?.status;
+  const wxStatus = statusData.weixin?.status;
 
   return (
     <div className={`${fp.floatingPanel} ${fp.bridgePanelWide}`} id="bridgePanel">
@@ -201,6 +203,13 @@ export function BridgePanel() {
               <span className={`${fp.bridgeTabDot}${dotClass(qqStatus)}`} />
               QQ
             </button>
+            <button
+              className={`${fp.bridgeTab}${platform === 'weixin' ? ` ${fp.bridgeTabActive}` : ''}`}
+              onClick={() => switchTab('weixin')}
+            >
+              <span className={`${fp.bridgeTabDot}${dotClass(wxStatus)}`} />
+              {t('settings.bridge.weixin')}
+            </button>
           </div>
           <button className={fp.floatingPanelClose} onClick={close}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -219,7 +228,18 @@ export function BridgePanel() {
                   <line x1="12" y1="17" x2="12.01" y2="17" />
                 </svg>
                 <div className={fp.bridgeOverlayText}>
-                  {t('bridge.notConfigured', { platform: platform === 'telegram' ? 'Telegram' : platform === 'whatsapp' ? 'WhatsApp' : platform === 'qq' ? 'QQ' : t('settings.bridge.feishu') })}
+                  {t('bridge.notConfigured', {
+                    platform:
+                      platform === 'telegram'
+                        ? 'Telegram'
+                        : platform === 'whatsapp'
+                          ? 'WhatsApp'
+                          : platform === 'qq'
+                            ? 'QQ'
+                            : platform === 'weixin'
+                              ? t('settings.bridge.weixin')
+                              : t('settings.bridge.feishu'),
+                  })}
                 </div>
                 <button className={fp.bridgeOverlayBtn} onClick={() => window.platform.openSettings('bridge')}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -298,7 +318,12 @@ function dotClass(status?: string): string {
 }
 
 function updateSidebarDot(data: Record<string, { status: string } | undefined>) {
-  const anyConnected = data.telegram?.status === 'connected' || data.feishu?.status === 'connected' || data.whatsapp?.status === 'connected' || data.qq?.status === 'connected';
+  const anyConnected =
+    data.telegram?.status === 'connected' ||
+    data.feishu?.status === 'connected' ||
+    data.whatsapp?.status === 'connected' ||
+    data.qq?.status === 'connected' ||
+    data.weixin?.status === 'connected';
   useStore.setState({ bridgeDotConnected: anyConnected });
 }
 

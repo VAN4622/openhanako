@@ -8,6 +8,11 @@ import fs from "fs";
 import path from "path";
 import { debugLog } from "../../lib/debug-log.js";
 import { parseSessionKey, collectKnownUsers, KNOWN_PLATFORMS } from "../../lib/bridge/session-key.js";
+import {
+  DEFAULT_WEIXIN_BASE_URL,
+  startWeixinQrLogin,
+  waitForWeixinQrLogin,
+} from "../../lib/bridge/weixin-adapter.js";
 import { t } from "../i18n.js";
 
 export default async function bridgeRoute(app, { engine, bridgeManager }) {
@@ -47,6 +52,16 @@ export default async function bridgeRoute(app, { engine, bridgeManager }) {
         error: live.qq?.error || null,
         appID: bridge.qq?.appID || "",
         appSecretMasked: (bridge.qq?.appSecret || bridge.qq?.token) ? mask(bridge.qq.appSecret || bridge.qq.token) : "",
+      },
+      weixin: {
+        configured: !!bridge.weixin?.token,
+        enabled: !!bridge.weixin?.enabled,
+        status: live.weixin?.status || "disconnected",
+        error: live.weixin?.error || null,
+        accountId: bridge.weixin?.accountId || "",
+        userId: bridge.weixin?.userId || "",
+        baseUrl: bridge.weixin?.baseUrl || DEFAULT_WEIXIN_BASE_URL,
+        tokenMasked: bridge.weixin?.token ? mask(bridge.weixin.token) : "",
       },
       readOnly: !!bridge.readOnly,
       knownUsers: collectKnownUsers(engine.getBridgeIndex()),
@@ -117,6 +132,61 @@ export default async function bridgeRoute(app, { engine, bridgeManager }) {
     if (typeof readOnly === "boolean") prefs.bridge.readOnly = readOnly;
     engine.savePreferences(prefs);
     debugLog()?.log("api", `POST /api/bridge/settings readOnly=${prefs.bridge.readOnly}`);
+    return { ok: true };
+  });
+
+  /** 微信官方接口：开始扫码登录 */
+  app.post("/api/bridge/weixin/login/start", async (req) => {
+    const prefs = engine.getPreferences();
+    const savedBaseUrl = prefs.bridge?.weixin?.baseUrl || DEFAULT_WEIXIN_BASE_URL;
+    const baseUrl = req.body?.baseUrl?.trim() || savedBaseUrl;
+    const result = await startWeixinQrLogin({ apiBaseUrl: baseUrl });
+    return { ok: true, ...result, baseUrl };
+  });
+
+  /** 微信官方接口：等待扫码结果 */
+  app.post("/api/bridge/weixin/login/wait", async (req) => {
+    const prefs = engine.getPreferences();
+    const savedBaseUrl = prefs.bridge?.weixin?.baseUrl || DEFAULT_WEIXIN_BASE_URL;
+    const baseUrl = req.body?.baseUrl?.trim() || savedBaseUrl;
+    const timeoutMs = Math.max(parseInt(req.body?.timeoutMs) || 30_000, 1000);
+    const result = await waitForWeixinQrLogin({
+      sessionKey: req.body?.sessionKey,
+      apiBaseUrl: baseUrl,
+      timeoutMs,
+    });
+
+    if (result.connected && result.token && result.accountId) {
+      if (!prefs.bridge) prefs.bridge = {};
+      prefs.bridge.weixin = {
+        ...(prefs.bridge.weixin || {}),
+        enabled: true,
+        baseUrl: result.baseUrl || baseUrl,
+        token: result.token,
+        accountId: result.accountId,
+        userId: result.userId || "",
+      };
+      engine.savePreferences(prefs);
+      bridgeManager.startPlatformFromConfig("weixin", prefs.bridge.weixin);
+    }
+
+    return { ok: true, ...result };
+  });
+
+  /** 微信官方接口：清除登录信息 */
+  app.post("/api/bridge/weixin/logout", async () => {
+    const prefs = engine.getPreferences();
+    if (!prefs.bridge) prefs.bridge = {};
+    const baseUrl = prefs.bridge?.weixin?.baseUrl || DEFAULT_WEIXIN_BASE_URL;
+    prefs.bridge.weixin = {
+      enabled: false,
+      baseUrl,
+      token: "",
+      accountId: "",
+      userId: "",
+    };
+    engine.savePreferences(prefs);
+    bridgeManager.stopPlatform("weixin");
     return { ok: true };
   });
 
