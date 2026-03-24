@@ -16,6 +16,13 @@ import {
 import { t } from "../i18n.js";
 
 export default async function bridgeRoute(app, { engine, bridgeManager }) {
+  const mask = (s) => s.length <= 8 ? "••••" : s.slice(0, 4) + "••••" + s.slice(-4);
+  const maskId = (s) => {
+    const value = String(s || "");
+    if (!value) return "";
+    if (value.length <= 10) return value.slice(0, 2) + "••••";
+    return value.slice(0, 4) + "••••" + value.slice(-4);
+  };
 
   /** 获取所有平台连接状态 */
   app.get("/api/bridge/status", async () => {
@@ -27,8 +34,6 @@ export default async function bridgeRoute(app, { engine, bridgeManager }) {
     const tgToken = bridge.telegram?.token || "";
     const fsAppId = bridge.feishu?.appId || "";
     const fsAppSecret = bridge.feishu?.appSecret || "";
-    const mask = (s) => s.length <= 8 ? "••••" : s.slice(0, 4) + "••••" + s.slice(-4);
-
     return {
       telegram: {
         configured: !!tgToken,
@@ -58,8 +63,8 @@ export default async function bridgeRoute(app, { engine, bridgeManager }) {
         enabled: !!bridge.weixin?.enabled,
         status: live.weixin?.status || "disconnected",
         error: live.weixin?.error || null,
-        accountId: bridge.weixin?.accountId || "",
-        userId: bridge.weixin?.userId || "",
+        accountId: maskId(bridge.weixin?.accountId),
+        userId: maskId(bridge.weixin?.userId),
         baseUrl: bridge.weixin?.baseUrl || DEFAULT_WEIXIN_BASE_URL,
         tokenMasked: bridge.weixin?.token ? mask(bridge.weixin.token) : "",
       },
@@ -177,6 +182,9 @@ export default async function bridgeRoute(app, { engine, bridgeManager }) {
   app.post("/api/bridge/weixin/logout", async () => {
     const prefs = engine.getPreferences();
     if (!prefs.bridge) prefs.bridge = {};
+    if (prefs.bridge.owner?.weixin) {
+      delete prefs.bridge.owner.weixin;
+    }
     const baseUrl = prefs.bridge?.weixin?.baseUrl || DEFAULT_WEIXIN_BASE_URL;
     prefs.bridge.weixin = {
       enabled: false,
