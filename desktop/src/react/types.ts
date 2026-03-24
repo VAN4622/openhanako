@@ -1,3 +1,20 @@
+// ── Auto-update ──
+
+export interface AutoUpdateState {
+  status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'error' | 'latest';
+  version: string | null;
+  releaseNotes: string | null;
+  releaseUrl: string | null;
+  downloadUrl: string | null;
+  progress: {
+    percent: number;
+    bytesPerSecond: number;
+    transferred: number;
+    total: number;
+  } | null;
+  error: string | null;
+}
+
 // ── 核心数据结构 ──
 
 export interface Session {
@@ -127,12 +144,59 @@ export interface PlatformApi {
   openExternal(url: string): void;
   showInFinder(path: string): void;
   browserEmergencyStop?(): void;
-  openSkillViewer?(opts: { skillPath: string }): void;
+  openSkillViewer?(opts: { skillPath?: string; name?: string; baseDir?: string; filePath?: string; installed?: boolean }): void;
   settingsChanged(event: string, payload?: unknown): void;
   onSettingsChanged(callback: (event: string, payload: unknown) => void): void;
   onSwitchTab?(callback: (tab: string) => void): void;
   getFilePath?(file: File): string | null;
   startDrag?(filePaths: string | string[]): void;
   appReady(): void;
+
+  // ── Window controls (Windows/Linux) ──
+  getPlatform?(): Promise<string>;
+  windowMinimize?(): void;
+  windowMaximize?(): void;
+  windowClose?(): void;
+  windowIsMaximized?(): Promise<boolean>;
+  onMaximizeChange?(callback: (maximized: boolean) => void): void;
+
+  // ── Browser viewer ──
+  updateBrowserViewer?(data: { running?: boolean; url?: string | null; thumbnail?: string | null }): void;
+  onBrowserUpdate?(callback: (data: { title?: string; canGoBack?: boolean; canGoForward?: boolean; running?: boolean }) => void): void;
+  closeBrowserViewer?(): void;
+  closeBrowser?(): void;
+  browserGoBack?(): void;
+  browserGoForward?(): void;
+  browserReload?(): void;
+
+  // ── Skill viewer (preload) ──
+  listSkillFiles?(baseDir: string): Promise<unknown[]>;
+  readSkillFile?(filePath: string): Promise<string | null>;
+
+  // ── Splash ──
+  getAvatarPath?(role: string): Promise<string | null>;
+  getSplashInfo?(): Promise<{ agentName?: string; locale?: string; yuan?: string } | null>;
+
+  // ── Notification ──
+  showNotification?(title: string, body: string): void;
+
+  // ── App info ──
+  getAppVersion?(): Promise<string>;
+  checkUpdate?(): Promise<{ version: string; downloadUrl: string } | null>;
+
+  // ── Auto-update (Windows) ──
+  autoUpdateCheck?(): Promise<string | null>;
+  autoUpdateDownload?(): Promise<boolean>;
+  autoUpdateInstall?(): void;
+  autoUpdateState?(): Promise<AutoUpdateState>;
+  autoUpdateSetChannel?(channel: 'stable' | 'beta'): Promise<void>;
+  onAutoUpdateState?(callback: (state: AutoUpdateState) => void): void;
+
+  // ── Skill viewer overlay ──
+  onShowSkillViewer?(callback: (data: unknown) => void): void;
+
+  // ── Inter-window communication ──
+  notifyMainWindow?(event: string, payload?: unknown): void;
+
   [key: string]: unknown;
 }

@@ -6,6 +6,8 @@ export interface ConnectionSlice {
   connected: boolean;
   statusKey: string;
   statusVars: Record<string, string | number>;
+  /** Bridge dot: at least one platform connected */
+  bridgeDotConnected: boolean;
   setServerPort: (port: string) => void;
   setServerBaseUrl: (baseUrl: string | null) => void;
   setServerToken: (token: string) => void;
@@ -23,6 +25,7 @@ export const createConnectionSlice = (
   connected: false,
   statusKey: 'status.connecting',
   statusVars: {},
+  bridgeDotConnected: false,
   setServerPort: (port) => set({ serverPort: port }),
   setServerBaseUrl: (baseUrl) => set({ serverBaseUrl: baseUrl }),
   setServerToken: (token) => set({ serverToken: token }),

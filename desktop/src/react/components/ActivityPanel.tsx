@@ -4,6 +4,8 @@ import { hanaFetch, hanaUrl } from '../hooks/use-hana-fetch';
 import { formatSessionDate, injectCopyButtons, parseMoodFromContent } from '../utils/format';
 import { yuanFallbackAvatar } from '../utils/agent-helpers';
 import { getMd } from '../utils/markdown';
+import fp from './FloatingPanels.module.css';
+import chatStyles from './chat/Chat.module.css';
 
 // ── 稳定头像时间戳（避免每次渲染生成新 URL） ──
 let _avatarTs = Date.now();
@@ -28,6 +30,8 @@ interface DetailMessage {
 
 interface DetailState {
   title: string;
+  agentId: string;
+  agentName: string;
   messages: DetailMessage[];
 }
 
@@ -49,11 +53,11 @@ export function ActivityPanel() {
       hanaFetch('/api/desk/activities')
         .then(r => r.json())
         .then(data => setActivities(data.activities || []))
-        .catch(() => {});
+        .catch(err => console.warn('[activity] fetch activities failed:', err));
       hanaFetch('/api/config')
         .then(r => r.json())
         .then(data => setHbEnabled(data.desk?.heartbeat_enabled !== false))
-        .catch(() => {});
+        .catch(err => console.warn('[activity] fetch config failed:', err));
       setDetail(null);
     }
   }, [activePanel, setActivities]);
@@ -86,7 +90,9 @@ export function ActivityPanel() {
         ? formatSessionDate(new Date(activity.startedAt).toISOString())
         : '';
       setDetail({
-        title: `${activity.agentName} · ${typeText}  ${timeStr}`,
+        title: `${typeText}  ${timeStr}`,
+        agentId: activity.agentId || currentAgentId || '',
+        agentName: activity.agentName || agentName,
         messages: messages || [],
       });
     } catch {}
@@ -101,20 +107,19 @@ export function ActivityPanel() {
   if (activePanel !== 'activity') return null;
 
   return (
-    <div className="floating-panel" id="activityPanel">
-      <div className="floating-panel-inner">
+    <div className={fp.floatingPanel} id="activityPanel">
+      <div className={fp.floatingPanelInner}>
         {detail ? (
           // 详情视图
-          <div id="activityDetailView">
-            <div className="floating-panel-header">
-              <button className="floating-panel-back" onClick={closeDetail}>
+          <div id="activityDetailView" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <div className={fp.floatingPanelHeader}>
+              <button className={fp.floatingPanelBack} onClick={closeDetail}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                <span>{t('activity.back')}</span>
               </button>
-              <span className="floating-panel-subtitle">{detail.title}</span>
-              <button className="floating-panel-close" onClick={close}>
+              <DetailHeader detail={detail} />
+              <button className={fp.floatingPanelClose} onClick={close}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
@@ -125,27 +130,27 @@ export function ActivityPanel() {
           </div>
         ) : (
           // 列表视图
-          <div id="activityListView">
-            <div className="floating-panel-header">
-              <h2 className="floating-panel-title">{t('activity.title')}</h2>
-              <div className="activity-hb-toggle">
+          <div id="activityListView" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+            <div className={fp.floatingPanelHeader}>
+              <h2 className={fp.floatingPanelTitle}>{t('activity.title')}</h2>
+              <div className={fp.activityHbToggle}>
                 <span className="hana-toggle-label">{t('activity.heartbeat')}</span>
                 <button
                   className={'hana-toggle' + (hbEnabled ? ' on' : '')}
                   onClick={toggleHeartbeat}
                 />
               </div>
-              <button className="floating-panel-close" onClick={close}>
+              <button className={fp.floatingPanelClose} onClick={close}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </div>
-            <div className="floating-panel-body">
-              <div className="activity-cards" id="activityCards">
+            <div className={fp.floatingPanelBody}>
+              <div className={fp.activityCards} id="activityCards">
                 {activities.length === 0 ? (
-                  <div className="activity-empty">{t('activity.empty')}</div>
+                  <div className={fp.activityEmpty}>{t('activity.empty')}</div>
                 ) : (
                   activities.map(a => (
                     <ActivityCard
@@ -200,30 +205,51 @@ function ActivityCard({
 
   return (
     <div
-      className={'act-card' + (a.status === 'error' ? ' error' : '')}
+      className={`${fp.actCard}${a.status === 'error' ? ` ${fp.actCardError}` : ''}`}
       style={a.sessionFile ? { cursor: 'pointer' } : undefined}
       onClick={a.sessionFile ? () => onOpen(a.id) : undefined}
     >
-      <div className="act-card-head">
+      <div className={fp.actCardHead}>
         <img
-          className="act-card-avatar"
+          className={fp.actCardAvatar}
           src={avatarSrc}
           onError={e => { (e.target as HTMLImageElement).onerror = null; (e.target as HTMLImageElement).src = yuanFallbackAvatar(ag?.yuan || 'hanako'); }}
           draggable={false}
         />
-        <span className="act-card-agent-name">{a.agentName || agentName}</span>
-        <span className="act-card-badge">{typeText}</span>
-        <span className="act-card-time">
+        <span className={fp.actCardAgentName}>{a.agentName || agentName}</span>
+        <span className={fp.actCardBadge}>{typeText}</span>
+        <span className={fp.actCardTime}>
           {a.startedAt ? formatSessionDate(new Date(a.startedAt).toISOString()) : ''}
         </span>
       </div>
-      <div className="act-card-summary">
+      <div className={fp.actCardSummary}>
         {a.summary || (a.type === 'heartbeat' ? t('activity.patrolDone') : t('activity.cronDone'))}
       </div>
-      <div className="act-card-meta">
-        {durationText && <span className="act-card-duration">{durationText}</span>}
+      <div className={fp.actCardMeta}>
+        {durationText && <span className={fp.actCardDuration}>{durationText}</span>}
         {a.status === 'error' && <span style={{ color: 'var(--danger)' }}>{t('activity.error')}</span>}
-        {a.sessionFile && <span className="act-card-view-hint">{t('activity.viewSession')}</span>}
+        {a.sessionFile && <span className={fp.actCardViewHint}>{t('activity.viewSession')}</span>}
+      </div>
+    </div>
+  );
+}
+
+function DetailHeader({ detail }: { detail: DetailState }) {
+  const agents = useStore(s => s.agents);
+  const ag = agents.find(x => x.id === detail.agentId);
+  const avatarSrc = hanaUrl(`/api/agents/${detail.agentId}/avatar?t=${_avatarTs}`);
+
+  return (
+    <div className={fp.detailHeaderInfo}>
+      <img
+        className={fp.detailHeaderAvatar}
+        src={avatarSrc}
+        onError={e => { (e.target as HTMLImageElement).onerror = null; (e.target as HTMLImageElement).src = yuanFallbackAvatar(ag?.yuan); }}
+        draggable={false}
+      />
+      <div className={fp.detailHeaderText}>
+        <span className={fp.detailHeaderName}>{detail.agentName}</span>
+        <span className={fp.detailHeaderSubtitle}>{detail.title}</span>
       </div>
     </div>
   );
@@ -241,17 +267,17 @@ function DetailBody({ messages }: { messages: DetailMessage[] }) {
   }, [messages]);
 
   return (
-    <div className="floating-panel-body" ref={bodyRef}>
+    <div className={fp.floatingPanelBody} ref={bodyRef}>
       {messages.map((m, i) => {
         if (m.role === 'assistant') {
           const { mood, text } = parseMoodFromContent(m.content);
           return (
-            <div key={i} className="activity-detail-msg assistant">
-              <div className="activity-detail-bubble">
+            <div key={i} className={`${fp.activityDetailMsg} ${fp.activityDetailMsgAssistant}`}>
+              <div className={fp.activityDetailBubble}>
                 {mood && (
-                  <details className="mood-wrapper">
-                    <summary className="mood-summary">{t('mood.label')}</summary>
-                    <div className="mood-block">{mood}</div>
+                  <details className={chatStyles.moodWrapper}>
+                    <summary className={chatStyles.moodSummary}>{t('mood.label')}</summary>
+                    <div className={chatStyles.moodBlock}>{mood}</div>
                   </details>
                 )}
                 {text && (
@@ -269,8 +295,8 @@ function DetailBody({ messages }: { messages: DetailMessage[] }) {
           );
         }
         return (
-          <div key={i} className="activity-detail-msg user">
-            <div className="activity-detail-bubble">{m.content}</div>
+          <div key={i} className={`${fp.activityDetailMsg} ${fp.activityDetailMsgUser}`}>
+            <div className={fp.activityDetailBubble}>{m.content}</div>
           </div>
         );
       })}

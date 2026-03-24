@@ -5,8 +5,9 @@ import { hanaFetch } from '../api';
 import { Toggle } from '../widgets/Toggle';
 import { SelectWidget } from '../widgets/SelectWidget';
 import { RemoteDirectoryPicker, type RemoteDirectoryListing } from '../../components/RemoteDirectoryPicker';
+import styles from '../Settings.module.css';
 
-const platform = (window as any).platform;
+const platform = window.platform;
 
 export function WorkTab() {
   const { settingsConfig, showToast, gatewayConfig, serverMode, serverBaseUrl } = useSettingsStore();
@@ -130,17 +131,17 @@ export function WorkTab() {
   };
 
   return (
-    <div className="settings-tab-content active" data-tab="work">
+    <div className={`${styles['settings-tab-content']} ${styles['active']}`} data-tab="work">
       {/* 主文件夹 */}
-      <section className="settings-section">
-        <h2 className="settings-section-title">{t('settings.work.homeFolder')}</h2>
-        <p className="settings-desc settings-desc-compact">
+      <section className={styles['settings-section']}>
+        <h2 className={styles['settings-section-title']}>{t('settings.work.homeFolder')}</h2>
+        <p className={`${styles['settings-desc']} ${styles['settings-desc-compact']}`}>
           {t('settings.work.homeFolderDesc')}
         </p>
-        <div className="settings-folder-picker">
+        <div className={styles['settings-folder-picker']}>
           <input
             type="text"
-            className="settings-input settings-folder-input"
+            className={`${styles['settings-input']} ${styles['settings-folder-input']}`}
             readOnly={!remoteWorkspaceMode}
             value={homeFolder}
             placeholder={remoteWorkspaceMode
@@ -153,14 +154,14 @@ export function WorkTab() {
             onClick={remoteWorkspaceMode ? undefined : pickHomeFolder}
             onChange={remoteWorkspaceMode ? (e) => setHomeFolder(e.target.value) : undefined}
           />
-          <button className="settings-folder-browse" onClick={pickHomeFolder}>
+          <button className={styles['settings-folder-browse']} onClick={pickHomeFolder}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
           {homeFolder && (
             <button
-              className="settings-folder-clear"
+              className={styles['settings-folder-clear']}
               onClick={clearHomeFolder}
               title={t('settings.work.homeFolderClear')}
             >
@@ -172,7 +173,7 @@ export function WorkTab() {
           )}
         </div>
         {remoteWorkspaceMode && (
-          <p className="settings-desc settings-desc-compact">
+          <p className={`${styles['settings-desc']} ${styles['settings-desc-compact']}`}>
             {tx(
               'settings.work.remoteHomeFolderHelp',
               '这里填写的是远程 Linux 服务器上的路径，不是当前 Windows 客户端上的目录。',
@@ -183,40 +184,40 @@ export function WorkTab() {
       </section>
 
       {/* 巡检 */}
-      <section className="settings-section">
-        <h2 className="settings-section-title">{t('settings.work.title')}</h2>
-        <div className="tool-caps-group">
-          <div className="tool-caps-item">
-            <div className="tool-caps-label">
-              <span className="tool-caps-name">{t('settings.work.heartbeatEnabled')}</span>
-              <span className="tool-caps-desc">{t('settings.work.heartbeatDesc')}</span>
+      <section className={styles['settings-section']}>
+        <h2 className={styles['settings-section-title']}>{t('settings.work.title')}</h2>
+        <div className={styles['tool-caps-group']}>
+          <div className={styles['tool-caps-item']}>
+            <div className={styles['tool-caps-label']}>
+              <span className={styles['tool-caps-name']}>{t('settings.work.heartbeatEnabled')}</span>
+              <span className={styles['tool-caps-desc']}>{t('settings.work.heartbeatDesc')}</span>
             </div>
             <Toggle
               on={hbEnabled}
               onChange={toggleHeartbeat}
             />
           </div>
-          <div className={`tool-caps-item${hbEnabled ? '' : ' settings-disabled'}`}>
-            <div className="tool-caps-label">
-              <span className="tool-caps-name">{t('settings.work.heartbeatInterval')}</span>
+          <div className={`${styles['tool-caps-item']}${hbEnabled ? '' : ' settings-disabled'}`}>
+            <div className={styles['tool-caps-label']}>
+              <span className={styles['tool-caps-name']}>{t('settings.work.heartbeatInterval')}</span>
             </div>
-            <div className="settings-input-group">
+            <div className={styles['settings-input-group']}>
               <input
                 type="number"
-                className="settings-input small"
+                className={`${styles['settings-input']} ${styles['small']}`}
                 min={1}
                 max={120}
                 value={hbInterval}
                 disabled={!hbEnabled}
                 onChange={(e) => setHbInterval(parseInt(e.target.value) || 15)}
               />
-              <span className="settings-input-unit">{t('settings.work.heartbeatUnit')}</span>
+              <span className={styles['settings-input-unit']}>{t('settings.work.heartbeatUnit')}</span>
             </div>
           </div>
-          <div className="tool-caps-item">
-            <div className="tool-caps-label">
-              <span className="tool-caps-name">{t('settings.work.cronAutoApprove')}</span>
-              <span className="tool-caps-desc">{t('settings.work.cronAutoApproveDesc')}</span>
+          <div className={styles['tool-caps-item']}>
+            <div className={styles['tool-caps-label']}>
+              <span className={styles['tool-caps-name']}>{t('settings.work.cronAutoApprove')}</span>
+              <span className={styles['tool-caps-desc']}>{t('settings.work.cronAutoApproveDesc')}</span>
             </div>
             <Toggle
               on={cronAutoApprove}
@@ -226,11 +227,11 @@ export function WorkTab() {
         </div>
       </section>
 
-      <section className="settings-section">
-        <h2 className="settings-section-title">
+      <section className={styles['settings-section']}>
+        <h2 className={styles['settings-section-title']}>
           {tx('settings.gateway.title', '远程网关', 'Remote Gateway')}
         </h2>
-        <p className="settings-desc settings-desc-compact">
+        <p className={`${styles['settings-desc']} ${styles['settings-desc-compact']}`}>
           {tx(
             'settings.gateway.desc',
             '让当前桌面客户端连接到远程 Hanako 后端。切换后需要重启应用。',
@@ -238,19 +239,19 @@ export function WorkTab() {
           )}
         </p>
 
-        <div className="settings-field">
-          <label className="settings-field-label">
+        <div className={styles['settings-field']}>
+          <label className={styles['settings-field-label']}>
             {tx('settings.gateway.current', '当前连接', 'Current Connection')}
           </label>
-          <div className="settings-field-hint">
+          <div className={styles['settings-field-hint']}>
             {serverMode === 'remote'
               ? `${tx('settings.gateway.mode.remote', '远程网关', 'Remote gateway')} · ${serverBaseUrl || '-'}`
               : `${tx('settings.gateway.mode.local', '本地内置服务', 'Local embedded server')} · ${serverBaseUrl || '-'}`}
           </div>
         </div>
 
-        <div className="settings-field">
-          <label className="settings-field-label">
+        <div className={styles['settings-field']}>
+          <label className={styles['settings-field-label']}>
             {tx('settings.gateway.mode', '连接模式', 'Connection Mode')}
           </label>
           <SelectWidget
@@ -263,19 +264,19 @@ export function WorkTab() {
           />
         </div>
 
-        <div className={`settings-field${gatewayMode === 'remote' ? '' : ' settings-disabled'}`}>
-          <label className="settings-field-label">
+        <div className={`${styles['settings-field']}${gatewayMode === 'remote' ? '' : ' settings-disabled'}`}>
+          <label className={styles['settings-field-label']}>
             {tx('settings.gateway.baseUrl', '网关地址', 'Gateway URL')}
           </label>
           <input
             type="url"
-            className="settings-input"
+            className={styles['settings-input']}
             value={gatewayBaseUrl}
             disabled={gatewayMode !== 'remote'}
             placeholder="https://your-gateway.example.com"
             onChange={(e) => setGatewayBaseUrl(e.target.value)}
           />
-          <span className="settings-field-hint">
+          <span className={styles['settings-field-hint']}>
             {tx(
               'settings.gateway.baseUrlHint',
               '填写远程 Hanako 服务的根地址，例如 https://host 或 https://host/hanako',
@@ -284,13 +285,13 @@ export function WorkTab() {
           </span>
         </div>
 
-        <div className={`settings-field${gatewayMode === 'remote' ? '' : ' settings-disabled'}`}>
-          <label className="settings-field-label">
+        <div className={`${styles['settings-field']}${gatewayMode === 'remote' ? '' : ' settings-disabled'}`}>
+          <label className={styles['settings-field-label']}>
             {tx('settings.gateway.token', '访问令牌', 'Access Token')}
           </label>
           <input
             type="password"
-            className="settings-input"
+            className={styles['settings-input']}
             value={gatewayToken}
             disabled={gatewayMode !== 'remote'}
             placeholder={tx('settings.gateway.tokenPlaceholder', '可选，如果网关要求 Bearer Token', 'Optional if the gateway requires a Bearer token')}
@@ -298,8 +299,8 @@ export function WorkTab() {
           />
         </div>
 
-        <div className="settings-section-footer">
-          <button className="settings-save-btn-sm" onClick={saveGateway} disabled={gatewaySaving}>
+        <div className={styles['settings-section-footer']}>
+          <button className={styles['settings-save-btn-sm']} onClick={saveGateway} disabled={gatewaySaving}>
             {gatewaySaving
               ? tx('settings.gateway.saving', '保存中...', 'Saving...')
               : tx('settings.gateway.save', '保存网关配置', 'Save Gateway Settings')}
@@ -307,8 +308,8 @@ export function WorkTab() {
         </div>
       </section>
 
-      <div className="settings-section-footer">
-        <button className="settings-save-btn-sm" onClick={saveWork}>
+      <div className={styles['settings-section-footer']}>
+        <button className={styles['settings-save-btn-sm']} onClick={saveWork}>
           {t('settings.save')}
         </button>
       </div>

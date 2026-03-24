@@ -1,10 +1,10 @@
 /**
- * DeskSection — 笺侧栏的书桌内容区
+ * DeskSection — 笺侧栏的书桌内容区（编排层）
  *
  * 替代旧 desk.js 的 renderDeskFiles / initJianEditor / updateDeskEmptyOverlay 逻辑。
  * 由 App.tsx 在 .jian-chat-content 容器内直接渲染。
  *
- * Phase B: 所有文件操作直接调用 desk-actions。
+ * 子组件拆分至 ./desk/ 目录。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +28,7 @@ import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 import { copyWorkspacePath, openWorkspaceFile, revealWorkspaceDirectory } from '../utils/remote-files';
 import { formatUploadRejection, uploadDeskFiles as uploadDeskItems } from '../utils/upload-files';
 import { showToast } from '../utils/toast';
+import s from './desk/Desk.module.css';
 
 // ── SVG 图标 ──
 
@@ -1166,14 +1167,14 @@ export function DeskSection() {
   return (
     <>
       <DeskDropZone onShowMenu={handleShowMenu}>
-        <div className="jian-desk-header">
-          <div className="jian-section-title">{t('desk.title')}</div>
+        <div className={s.header}>
+          <div className={`jian-section-title ${s.sectionTitle}`}>{t('desk.title')}</div>
           <DeskCwdSkillsButton />
         </div>
         <DeskOpenButton />
         <DeskCwdSkillsPanel />
         <DeskSkillsSection />
-        <div className="jian-desk-toolbar">
+        <div className={s.toolbar}>
           <DeskBreadcrumb />
           <DeskSortButton sortMode={sortMode} onSort={setSortMode} onShowMenu={handleShowMenu} />
         </div>

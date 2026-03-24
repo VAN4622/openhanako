@@ -14,6 +14,7 @@ const path = require("path");
 const { fork, execFileSync } = require("child_process");
 const fs = require("fs");
 const WebSocket = require("ws");
+const { initAutoUpdater, checkForUpdatesAuto, setMainWindow: setUpdaterMainWindow, setUpdateChannel } = require("./auto-updater.cjs");
 
 // macOS/Linux: Electron 从 Dock/Finder 启动时 PATH 只有系统默认值，
 // Homebrew、npm global 等路径全部丢失。用登录 shell 解析完整 PATH。
@@ -788,6 +789,9 @@ function createMainWindow() {
   }
 
   mainWindow = new BrowserWindow(opts);
+
+  // Windows 自动更新：初始化 electron-updater
+  initAutoUpdater(mainWindow);
 
   if (saved?.isMaximized) {
     mainWindow.maximize();
@@ -1634,38 +1638,9 @@ function createOnboardingWindow(query = {}) {
   });
 }
 
-// ── 更新检查 ──
-let _updateInfo = null;
-
+// ── 更新检查（统一走 auto-updater.cjs）──
 async function checkForUpdates() {
-  try {
-    const res = await fetch("https://api.github.com/repos/liliMozi/openhanako/releases/latest", {
-      headers: { "User-Agent": "Hanako" },
-      signal: AbortSignal.timeout(10000),
-    });
-    if (!res.ok) return;
-    const data = await res.json();
-    const latest = (data.tag_name || "").replace(/^v/, "");
-    const current = app.getVersion();
-    if (!latest || !isNewerVersion(latest, current)) return;
-    const ext = process.platform === "win32" ? ".exe" : ".dmg";
-    _updateInfo = {
-      version: latest,
-      url: data.html_url,
-      downloadUrl: (data.assets || []).find(a => a.name?.endsWith(ext))?.browser_download_url || data.html_url,
-    };
-    console.log(`[desktop] 发现新版本: v${latest}（当前 v${current}）`);
-  } catch {}
-}
-
-function isNewerVersion(latest, current) {
-  const a = latest.split(".").map(Number);
-  const b = current.split(".").map(Number);
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    if ((a[i] || 0) > (b[i] || 0)) return true;
-    if ((a[i] || 0) < (b[i] || 0)) return false;
-  }
-  return false;
+  await checkForUpdatesAuto();
 }
 
 // ── IPC ──
@@ -1680,7 +1655,15 @@ ipcMain.handle("get-gateway-fallback-error", () => (
 ipcMain.handle("save-gateway-config", (_event, config) => saveGatewayConfig(config || {}));
 ipcMain.handle("verify-gateway-config", async (_event, config) => verifyGatewayConfig(config || readGatewayConfig()));
 ipcMain.handle("get-app-version", () => app.getVersion());
-ipcMain.handle("check-update", () => _updateInfo);
+// 旧版兼容：check-update 返回 auto-updater 状态中的可用版本信息
+const { getState: getUpdateState } = require("./auto-updater.cjs");
+ipcMain.handle("check-update", () => {
+  const s = getUpdateState();
+  if (s.status === "available" || s.status === "downloaded") {
+    return { version: s.version, downloadUrl: s.downloadUrl || s.releaseUrl };
+  }
+  return null;
+});
 
 ipcMain.handle("open-settings", (_event, tab, theme) => createSettingsWindow(tab, theme));
 
@@ -2328,6 +2311,14 @@ app.whenReady().then(async () => {
     }
 
     // 5. 后台检查更新（不阻塞启动）
+    // 从 preferences.json 同步更新通道
+    try {
+      const prefsPath = path.join(hanakoHome, "user", "preferences.json");
+      if (fs.existsSync(prefsPath)) {
+        const prefs = JSON.parse(fs.readFileSync(prefsPath, "utf-8"));
+        if (prefs.update_channel) setUpdateChannel(prefs.update_channel);
+      }
+    } catch {}
     checkForUpdates().catch(() => {});
   } catch (err) {
     console.error("[desktop] 启动失败:", err.message);

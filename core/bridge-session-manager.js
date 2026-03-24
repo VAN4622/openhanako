@@ -57,6 +57,7 @@ export class BridgeSessionManager {
   constructor(deps) {
     this._deps = deps;
     this._activeSessions = new Map();
+    this._presentedFiles = new Map();
   }
 
   async _autoLinkOwnerSession(sessionKey, meta = {}) {
@@ -114,6 +115,13 @@ export class BridgeSessionManager {
     return true;
   }
 
+  /** 获取并清空本轮 present_files 产出 */
+  consumePresentedFiles(sessionKey) {
+    const files = this._presentedFiles.get(sessionKey) || [];
+    this._presentedFiles.delete(sessionKey);
+    return files;
+  }
+
   /** bridge 索引文件路径 */
   _indexPath(agent) {
     const a = agent || this._deps.getAgent();
@@ -167,7 +175,7 @@ export class BridgeSessionManager {
    * @param {string} prompt - 格式化后的用户消息
    * @param {string} sessionKey - 会话标识（如 tg_dm_12345）
    * @param {object} [meta] - 元数据（name, avatarUrl, userId）
-   * @param {object} [opts] - { guest: boolean, contextTag?: string, onDelta? }
+   * @param {object} [opts] - { guest: boolean, contextTag?: string, onDelta?, images? }
    * @returns {Promise<string|null>} agent 的回复文本
    */
   async executeExternalMessage(prompt, sessionKey, meta, opts = {}) {
@@ -184,6 +192,7 @@ export class BridgeSessionManager {
     const raw = index[sessionKey];
     const existingFile = typeof raw === "string" ? raw : raw?.file || null;
     const existingPath = existingFile ? path.join(bridgeDir, existingFile) : null;
+    this._presentedFiles.delete(sessionKey);
 
     try {
       if (!opts.guest) {
@@ -305,6 +314,7 @@ export class BridgeSessionManager {
 
       // 捕获文本输出
       let capturedText = "";
+      const presentedFiles = [];
       const unsub = session.subscribe((event) => {
         if (event.type === "message_update") {
           const sub = event.assistantMessageEvent;
@@ -313,14 +323,25 @@ export class BridgeSessionManager {
             capturedText += delta;
             try { opts.onDelta?.(delta, capturedText); } catch {}
           }
+        } else if (event.type === "tool_execution_end" && event.toolName === "present_files") {
+          const details = event.result?.details || {};
+          const files = Array.isArray(details.files) ? details.files : [];
+          for (const file of files) {
+            if (file?.filePath) presentedFiles.push(file.filePath);
+          }
         }
       });
 
       try {
-        await session.prompt(prompt);
+        const promptOpts = opts.images?.length ? { images: opts.images } : undefined;
+        await session.prompt(prompt, promptOpts);
       } finally {
         unsub?.();
         this._activeSessions.delete(sessionKey);
+      }
+
+      if (presentedFiles.length > 0) {
+        this._presentedFiles.set(sessionKey, presentedFiles);
       }
 
       // 更新索引 + 元数据

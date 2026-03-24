@@ -23,6 +23,13 @@ contextBridge.exposeInMainWorld("hana", {
   verifyGatewayConfig: (config) => ipcRenderer.invoke("verify-gateway-config", config),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
   checkUpdate: () => ipcRenderer.invoke("check-update"),
+  // Auto-update (Windows)
+  autoUpdateCheck: () => ipcRenderer.invoke("auto-update-check"),
+  autoUpdateDownload: () => ipcRenderer.invoke("auto-update-download"),
+  autoUpdateInstall: () => ipcRenderer.invoke("auto-update-install"),
+  autoUpdateState: () => ipcRenderer.invoke("auto-update-state"),
+  autoUpdateSetChannel: (ch) => ipcRenderer.invoke("auto-update-set-channel", ch),
+  onAutoUpdateState: (cb) => ipcRenderer.on("auto-update-state", (_, state) => cb(state)),
   appReady: () => ipcRenderer.invoke("app-ready"),
   selectFolder: () => ipcRenderer.invoke("select-folder"),
   selectSkill: () => ipcRenderer.invoke("select-skill"),

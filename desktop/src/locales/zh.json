@@ -48,7 +48,7 @@
     "jian": "书桌",
     "bridge": "接入社交平台",
     "toggle": "侧边栏",
-    "bridgeShort": "接入"
+    "bridgeShort": "接入社交平台"
   },
   "session": {
     "untitled": "新对话",
@@ -117,11 +117,13 @@
     "thinkingLevel": {
       "off": "关闭",
       "auto": "自动",
+      "high": "深度",
       "xhigh": "极限"
     },
     "thinkingDesc": {
       "off": "不推理",
       "auto": "模型决定深度",
+      "high": "深度推理",
       "xhigh": "最强推理"
     },
     "contextWindow": "上下文 {windowK}k",
@@ -472,8 +474,8 @@
       "ishikiHint": "定义助手的性格、语气和行为方式。名字会自动注入，无需手动填写",
       "publicIshiki": "对外意识",
       "publicIshikiHint": "出于隐私考虑，助手与访客对话时无法访问记忆、你的个人信息，以及电脑上的任何文件与工具。\n你可以在这里设定助手对访客说话时的回复风格以及注意事项。",
-      "chatModel": "对话模型",
-      "chatModelHint": "Ta 在对话中使用的模型。在「模型」页添加可选模型",
+      "chatModel": "Ta 的模型",
+      "chatModelHint": "Ta 在对话与工作中使用的模型",
       "addAgent": "新建助手",
       "createTitle": "新建助手",
       "namePlaceholder": "起个名字",
@@ -497,7 +499,7 @@
       "setActive": "设为主助手",
       "lastAgent": "至少保留一个助手",
       "yuan": "元",
-      "yuanHint": "「元」是助手的先天思维方式，你可以选择它更理性还是更感性\n以此为基础搭建你独一无二的伙伴"
+      "yuanHint": "「元」是助手的先天思维方式，以此为基础搭建你独一无二的伙伴"
     },
     "about": {
       "title": "关于 Ta",
@@ -515,7 +517,16 @@
       "fullAccessCancel": "取消",
       "fullAccessConfirm": "我了解风险，开启",
       "updateAvailable": "有新版本可用：v{{version}}",
-      "updateDownload": "下载"
+      "updateDownload": "下载",
+      "updateChecking": "正在检查更新…",
+      "updateDownloading": "正在下载 v{{version}}…",
+      "updateReadyInstall": "v{{version}} 已下载完成",
+      "updateInstall": "立即安装",
+      "updateProgress": "{{percent}}%",
+      "updateError": "检查更新失败",
+      "updateLatest": "已是最新版本",
+      "updateCheckBtn": "检查更新",
+      "betaUpdates": "接收测试版更新"
     },
     "me": {
       "title": "我",
@@ -802,6 +813,15 @@
       "qqAppId": "App ID",
       "qqAppSecret": "App Secret",
       "qqHint": "从 QQ 机器人开放平台（q.qq.com/qqbot）获取",
+      "weixin": "微信",
+      "weixinBaseUrl": "接口地址",
+      "weixinHint": "使用腾讯官方 OpenClaw 微信接口地址，默认无需修改。",
+      "weixinAccountId": "Bot ID",
+      "weixinUserId": "用户 ID",
+      "weixinLogin": "扫码登录",
+      "weixinLogout": "退出登录",
+      "weixinNeedLogin": "请先完成微信登录",
+      "weixinScanHint": "请使用微信扫码并在手机上确认登录",
       "connected": "已连接",
       "disconnected": "未连接",
       "error": "连接失败",
@@ -839,6 +859,11 @@
         "点击「添加事件」，添加 <code>im.message.receive_v1</code>（接收消息）",
         "重要：进入「版本管理与发布」，先创建并发布一个版本（长连接配置需要应用已发布才能保存）",
         "将 App ID 和 App Secret 粘贴到上方输入框，打开开关即可"
+      ],
+      "tutorialWxSteps": [
+        "在“微信”中保持默认接口地址，点击“扫码登录”",
+        "使用微信扫描二维码，并在手机上确认登录",
+        "登录成功后，先给 Hanako 发一条消息，之后即可在设置中选择“哪个账号是你”"
       ],
       "whatsappHint": "即将支持"
     }
@@ -942,7 +967,7 @@
     "cwdSkillsDesc": "技能跟随工作空间",
     "cwdSkillsDrop": "拖入文件夹或 .zip 安装技能",
     "deleteSkill": "删除技能",
-    "openInFinder": "在访达中打开",
+    "openInFinder": "打开文件夹",
     "jianLabel": "笺",
     "jianPlaceholder": "写点什么，告诉助手这个文件夹里面的文件该如何处理...",
     "emptyTitle": "书桌还空空的呢",
@@ -953,7 +978,7 @@
     "newFolder": "新建文件夹",
     "ctx": {
       "open": "打开",
-      "openInFinder": "在访达中打开",
+      "openInFinder": "打开文件夹",
       "rename": "重命名",
       "copyPath": "复制路径",
       "delete": "删除",
